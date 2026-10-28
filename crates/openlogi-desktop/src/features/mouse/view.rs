@@ -19,7 +19,9 @@ use super::geometry::{
     LABEL_H, LabelDistribution, asset_dimensions_for_png, asset_has_button_labels,
     asset_hotspots_for_png, labels_from_hotspots,
 };
-use super::hotspots::{Hotspot, MOUSE_MODEL_SIZE, MouseControlId, default_hotspots};
+use super::hotspots::{
+    Hotspot, MOUSE_MODEL_SIZE, MouseControlId, default_hotspots, spy_overlay_for,
+};
 use super::inspector::{BindingInspectorData, binding_inspector};
 use super::leader_lines::{Geometry as LeaderGeometry, Label, Side, paint as paint_leader_lines};
 use super::picker::{GESTURE_BUTTON_ICON, action_icon_path};
@@ -283,7 +285,7 @@ impl Render for MouseModelView {
         let hotspots_outer = hotspots.clone();
         let labels_outer = labels.clone();
         let leader_canvas = leader_canvas(hotspots, labels, highlight, mouse_left, mouse_w);
-        let breathing_art = breathing_art(asset, mouse_left, mouse_w, mouse_h, glow);
+        let breathing_art = breathing_art(asset, device_key, mouse_left, mouse_w, mouse_h, glow);
         let model = ModelRect {
             left: mouse_left,
             width: mouse_w,
@@ -511,6 +513,7 @@ fn leader_canvas(
 
 fn breathing_art(
     asset: Option<&ResolvedAsset>,
+    config_key: Option<&str>,
     mouse_left: f32,
     mouse_w: f32,
     mouse_h: f32,
@@ -521,6 +524,11 @@ fn breathing_art(
             .w(px(mouse_w))
             .h(px(mouse_h))
             .into_any_element(),
+        None if config_key.and_then(spy_overlay_for).is_some() => G502Silhouette {
+            w: mouse_w,
+            h: mouse_h,
+        }
+        .into_any_element(),
         None => Silhouette {
             w: mouse_w,
             h: mouse_h,
@@ -847,6 +855,63 @@ impl RenderOnce for Silhouette {
                     .rounded_md()
                     .bg(hsla(0., 0., 0.25, 1.0)),
             )
+    }
+}
+
+/// Top-down drawing of the G502 X Plus, authored in [`MOUSE_MODEL_SIZE`] units
+/// and scaled to the canvas. The button zones line up with
+/// [`super::hotspots::spy_hotspots`]; move them together.
+#[derive(IntoElement)]
+struct G502Silhouette {
+    w: f32,
+    h: f32,
+}
+
+impl RenderOnce for G502Silhouette {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let pal = theme::palette(cx);
+        let s = self.w / MOUSE_MODEL_SIZE.0;
+        let dark = hsla(0., 0., 0.25, 1.0);
+        // One rounded block in model units: `(x, y, w, h, corner radius)`.
+        let block = move |(x, y, w, h, r): (f32, f32, f32, f32, f32)| {
+            div()
+                .absolute()
+                .left(px(x * s))
+                .top(px(y * s))
+                .w(px(w * s))
+                .h(px(h * s))
+                .rounded(px(r * s))
+        };
+        div()
+            .absolute()
+            .inset_0()
+            .w(px(self.w))
+            .h(px(self.h))
+            // Palm shell and the thumb rest on the left.
+            .child(
+                block((95., 8., 230., 544., 105.))
+                    .border_1()
+                    .border_color(pal.text_muted)
+                    .bg(pal.muted),
+            )
+            .child(
+                block((52., 235., 80., 235., 38.))
+                    .border_1()
+                    .border_color(pal.text_muted)
+                    .bg(pal.muted),
+            )
+            // Left and right click plates with the wheel channel between them.
+            .child(block((105., 18., 60., 190., 30.)).border_1().border_color(pal.border))
+            .child(block((255., 18., 60., 190., 30.)).border_1().border_color(pal.border))
+            .child(block((199., 90., 22., 74., 11.)).bg(dark))
+            // DPI cluster and profile button.
+            .child(block((172., 219., 32., 32., 8.)).bg(dark))
+            .child(block((216., 219., 32., 32., 8.)).bg(dark))
+            .child(block((189., 274., 42., 28., 14.)).bg(dark))
+            // Thumb buttons: back, forward, sniper.
+            .child(block((62., 254., 52., 48., 12.)).bg(dark))
+            .child(block((62., 316., 52., 48., 12.)).bg(dark))
+            .child(block((62., 396., 52., 48., 12.)).bg(dark))
     }
 }
 

@@ -124,10 +124,22 @@ pub fn default_hotspots(thumbwheel: bool) -> Vec<Hotspot> {
 
 /// MX-only controls that the G502 X Plus does not have. They occupy the same
 /// silhouette slots we use for G6–G9, so they must come off before merge.
-const G502_OMIT: [MouseControlId; 3] = [
+const G502_MX_ONLY: [MouseControlId; 3] = [
     MouseControlId::Button(ButtonId::GestureButton),
     MouseControlId::Button(ButtonId::DpiToggle),
     MouseControlId::Button(ButtonId::HapticPanel),
+];
+
+/// Everything the G502 overlay replaces: the MX-only slots plus the generic
+/// silhouette's back/forward/wheel slots, which [`spy_hotspots`] re-places on
+/// the G502-shaped drawing (`G502Silhouette` in `view.rs`).
+const G502_OMIT: [MouseControlId; 6] = [
+    G502_MX_ONLY[0],
+    G502_MX_ONLY[1],
+    G502_MX_ONLY[2],
+    MouseControlId::Button(ButtonId::Back),
+    MouseControlId::Button(ButtonId::Forward),
+    MouseControlId::Button(ButtonId::MiddleClick),
 ];
 
 /// Per-model silhouette overlay for a [`SpyModel`]. Gated on the HID++ key so
@@ -136,7 +148,7 @@ pub struct SpyOverlay {
     /// MX slots this model's extras replace.
     pub omit: &'static [MouseControlId],
     /// Synthetic extra-button targets (G6–G9 on the G502 X Plus).
-    pub hotspots: [Hotspot; 6],
+    pub hotspots: [Hotspot; 9],
 }
 
 /// Overlay for this HID++ model id, if it has a locked spy map.
@@ -149,60 +161,30 @@ pub fn spy_overlay_for(config_key: &str) -> Option<SpyOverlay> {
     })
 }
 
-/// Synthetic G6–G9 and wheel-tilt targets for the G502 X Plus silhouette. Coordinates reuse
-/// the MX left-thumb and DPI-cluster slots so the extras are visible; this
-/// mouse has no depot `slotId`s. Other models add their own overlay in
-/// [`spy_overlay_for`] — do not reuse these numbers.
+/// Hotspots for the G502 X Plus drawing, in [`MOUSE_MODEL_SIZE`] units. They
+/// are authored against `G502Silhouette`: change both together.
 #[must_use]
-pub fn spy_hotspots() -> [Hotspot; 6] {
+pub fn spy_hotspots() -> [Hotspot; 9] {
+    let spot = |id: ButtonId, x: f32, y: f32, w: f32, h: f32| Hotspot {
+        id: id.into(),
+        x,
+        y,
+        w,
+        h,
+    };
     [
-        // Left-thumb sniper — the MX silhouette's gesture-button slot.
-        Hotspot {
-            id: ButtonId::DpiShift.into(),
-            x: 8.,
-            y: 380.,
-            w: 44.,
-            h: 80.,
-        },
-        // DPI cluster, left of the old ModeShift pad.
-        Hotspot {
-            id: ButtonId::DpiDown.into(),
-            x: 130.,
-            y: 226.,
-            w: 48.,
-            h: 44.,
-        },
-        // DPI cluster, right of the old ModeShift pad.
-        Hotspot {
-            id: ButtonId::DpiUp.into(),
-            x: 242.,
-            y: 226.,
-            w: 48.,
-            h: 44.,
-        },
-        // Profile cycle — immediately behind the DPI cluster.
-        Hotspot {
-            id: ButtonId::ProfileCycle.into(),
-            x: 175.,
-            y: 278.,
-            w: 70.,
-            h: 40.,
-        },
-        // Wheel tilt — flanking the middle-click wheel slot.
-        Hotspot {
-            id: ButtonId::WheelTiltLeft.into(),
-            x: 140.,
-            y: 130.,
-            w: 40.,
-            h: 50.,
-        },
-        Hotspot {
-            id: ButtonId::WheelTiltRight.into(),
-            x: 240.,
-            y: 130.,
-            w: 40.,
-            h: 50.,
-        },
+        // Thumb rest, top to bottom: back, forward, sniper (DPI shift).
+        spot(ButtonId::Back, 58., 250., 60., 56.),
+        spot(ButtonId::Forward, 58., 312., 60., 56.),
+        spot(ButtonId::DpiShift, 58., 392., 60., 56.),
+        // The wheel and its two tilt directions.
+        spot(ButtonId::WheelTiltLeft, 165., 85., 30., 85.),
+        spot(ButtonId::MiddleClick, 195., 85., 30., 85.),
+        spot(ButtonId::WheelTiltRight, 225., 85., 30., 85.),
+        // DPI cluster behind the wheel, and the profile button below it.
+        spot(ButtonId::DpiDown, 168., 215., 40., 40.),
+        spot(ButtonId::DpiUp, 212., 215., 40., 40.),
+        spot(ButtonId::ProfileCycle, 185., 270., 50., 36.),
     ]
 }
 
@@ -277,7 +259,13 @@ mod tests {
     #[test]
     fn spy_hotspots_cover_g6_through_g9() {
         let ids: Vec<_> = spy_hotspots().into_iter().map(|h| h.id).collect();
-        for button in [ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight] {
+        for button in [
+            ButtonId::WheelTiltLeft,
+            ButtonId::WheelTiltRight,
+            ButtonId::Back,
+            ButtonId::Forward,
+            ButtonId::MiddleClick,
+        ] {
             assert!(
                 ids.contains(&MouseControlId::Button(button)),
                 "{button:?} must have a synthetic hotspot"
@@ -320,7 +308,7 @@ mod tests {
             4
         );
         assert!(
-            !g502.iter().any(|h| G502_OMIT.contains(&h.id)),
+            !g502.iter().any(|h| G502_MX_ONLY.contains(&h.id)),
             "MX-only slots must yield to G6–G9 on the G502 silhouette"
         );
     }
