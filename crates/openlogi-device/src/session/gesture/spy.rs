@@ -33,11 +33,15 @@ use crate::session::capture_restore::restore_result;
 /// Locked `0x8110` bit → [`ButtonId`] map for the G502 X Plus.
 ///
 /// G4/G5 (bits 3 and 5) are suppressed only when those buttons are in the
-/// armed set — unbound they stay firmware-native.
-const G502_X_PLUS_SPY_BITS: [(u8, ButtonId); 6] = [
+/// armed set — unbound they stay firmware-native. Wheel tilt (bits 6 left,
+/// 7 right; read off a live watch dump) sends nothing in Host mode, so the
+/// armed set always carries both directions.
+const G502_X_PLUS_SPY_BITS: [(u8, ButtonId); 8] = [
     (3, ButtonId::Back),
     (4, ButtonId::DpiShift),
     (5, ButtonId::Forward),
+    (6, ButtonId::WheelTiltLeft),
+    (7, ButtonId::WheelTiltRight),
     (10, ButtonId::DpiDown),
     (9, ButtonId::DpiUp),
     (8, ButtonId::ProfileCycle),
@@ -390,6 +394,32 @@ mod tests {
         assert_eq!(down, [(ButtonId::DpiUp, true)]);
         let up = spy_edges(0x0200, 0, &buttons, &G502_X_PLUS_SPY_BITS);
         assert_eq!(up, [(ButtonId::DpiUp, false)]);
+    }
+
+    #[test]
+    fn edges_report_wheel_tilt_left_and_right() {
+        let buttons = [ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight];
+        let left = spy_edges(0, 0x0040, &buttons, &G502_X_PLUS_SPY_BITS);
+        assert_eq!(left, [(ButtonId::WheelTiltLeft, true)]);
+        let right = spy_edges(0x0040, 0x0080, &buttons, &G502_X_PLUS_SPY_BITS);
+        assert_eq!(
+            right,
+            [
+                (ButtonId::WheelTiltLeft, false),
+                (ButtonId::WheelTiltRight, true)
+            ]
+        );
+    }
+
+    #[test]
+    fn suppress_zeros_the_wheel_tilt_slots_when_armed() {
+        let mapping = [1, 2, 3, 4, 0, 5, 6, 7, 0, 0, 0];
+        let out = suppress_spy_slots(
+            &mapping,
+            &[ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight],
+            &G502_X_PLUS_SPY_BITS,
+        );
+        assert_eq!(out, [1, 2, 3, 4, 0, 5, 0, 0, 0, 0, 0]);
     }
 
     #[test]
