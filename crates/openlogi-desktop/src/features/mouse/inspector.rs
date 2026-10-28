@@ -12,7 +12,7 @@ use gpui_component::{
     Icon, IconName, Selectable as _, Sizable as _, button::Button, h_flex, input::InputState,
     scroll::ScrollableElement as _, v_flex,
 };
-use openlogi_core::binding::{Action, ButtonId, GestureDirection, default_binding};
+use openlogi_core::binding::{Action, ButtonId, GestureDirection, KeyCombo, default_binding};
 
 use super::hotspots::MouseControlId;
 use super::picker::{
@@ -43,12 +43,14 @@ pub(super) struct BindingInspectorData<'a> {
 struct ActionPickerContext<'a> {
     open: bool,
     search: &'a Entity<InputState>,
+    shortcut: &'a Entity<InputState>,
     view: &'a Entity<MouseModelView>,
 }
 
 pub(super) fn binding_inspector(
     data: BindingInspectorData<'_>,
     action_search: &Entity<InputState>,
+    shortcut_input: &Entity<InputState>,
     view: &Entity<MouseModelView>,
     cx: &Context<MouseModelView>,
 ) -> gpui::Div {
@@ -56,6 +58,7 @@ pub(super) fn binding_inspector(
     let picker = ActionPickerContext {
         open: data.action_picker_open,
         search: action_search,
+        shortcut: shortcut_input,
         view,
     };
     let body = match data.selected {
@@ -220,6 +223,7 @@ fn button_inspector(
                 "inspector-action",
                 Some(&action),
                 picker.search,
+                picker.shortcut,
                 &on_pick,
                 pal,
                 cx,
@@ -273,6 +277,7 @@ fn inherited_gesture_inspector(
                 "inspector-gesture-override",
                 None,
                 picker.search,
+                picker.shortcut,
                 &on_pick,
                 pal,
                 cx,
@@ -336,6 +341,7 @@ fn gesture_inspector(
                 "inspector-gesture-action",
                 Some(&current),
                 picker.search,
+                picker.shortcut,
                 &on_pick,
                 pal,
                 cx,
@@ -643,6 +649,7 @@ fn action_library(
     id_prefix: &'static str,
     current: Option<&Action>,
     action_search: &Entity<InputState>,
+    shortcut_input: &Entity<InputState>,
     on_pick: &PickFn,
     pal: Palette,
     cx: &Context<MouseModelView>,
@@ -654,6 +661,7 @@ fn action_library(
         .pt_1()
         .child(editor_section(tr!("actions.actions"), pal))
         .child(control_input(action_search).cleanable(true))
+        .child(shortcut_field(shortcut_input, on_pick, pal))
         .child(
             v_flex()
                 .gap_0p5()
@@ -667,6 +675,41 @@ fn action_library(
                     )
                 })
                 .children(rows),
+        )
+}
+
+/// Free-form key field: type a key such as `9` or `Ctrl+Shift+P` and press
+/// Add to bind it as a [`Action::CustomShortcut`]. Unparseable text is ignored.
+fn shortcut_field(
+    shortcut_input: &Entity<InputState>,
+    on_pick: &PickFn,
+    pal: Palette,
+) -> impl IntoElement {
+    let submit_input = shortcut_input.clone();
+    let on_pick = Rc::clone(on_pick);
+    v_flex()
+        .gap_1()
+        .child(editor_section(tr!("action_ring.custom_shortcut"), pal))
+        .child(
+            h_flex()
+                .gap_2()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(control_input(shortcut_input).cleanable(true)),
+                )
+                .child(
+                    Button::new("mouse-add-shortcut")
+                        .compact()
+                        .label(tr!("common.add"))
+                        .on_click(move |_, window, cx| {
+                            let text = submit_input.read(cx).value().to_string();
+                            if let Ok(combo) = text.parse::<KeyCombo>() {
+                                on_pick(Action::CustomShortcut(combo), window, cx);
+                            }
+                        }),
+                ),
         )
 }
 
