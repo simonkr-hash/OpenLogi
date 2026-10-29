@@ -163,6 +163,12 @@ pub fn spy_overlay_for(config_key: &str) -> Option<SpyOverlay> {
 
 /// Hotspots for the G502 X Plus drawing, in [`MOUSE_MODEL_SIZE`] units. They
 /// are authored against `G502Silhouette`: change both together.
+///
+/// Physical layout (top-down, thumb rest on the left), front to back on the
+/// left edge: G8 (DPI up), G7 (DPI down), the DPI-shift key, G5 (forward), G4
+/// (back). The wheel tilts left/right and clicks; a free-spin lock switch sits
+/// under it and sends no input, so it has no hotspot. The profile button is
+/// below that switch.
 #[must_use]
 pub fn spy_hotspots() -> [Hotspot; 9] {
     let spot = |id: ButtonId, x: f32, y: f32, w: f32, h: f32| Hotspot {
@@ -173,18 +179,15 @@ pub fn spy_hotspots() -> [Hotspot; 9] {
         h,
     };
     [
-        // Thumb rest, top to bottom: back, forward, sniper (DPI shift).
-        spot(ButtonId::Back, 58., 250., 60., 56.),
-        spot(ButtonId::Forward, 58., 312., 60., 56.),
-        spot(ButtonId::DpiShift, 58., 392., 60., 56.),
-        // The wheel and its two tilt directions.
-        spot(ButtonId::WheelTiltLeft, 165., 85., 30., 85.),
-        spot(ButtonId::MiddleClick, 195., 85., 30., 85.),
-        spot(ButtonId::WheelTiltRight, 225., 85., 30., 85.),
-        // DPI cluster behind the wheel, and the profile button below it.
-        spot(ButtonId::DpiDown, 168., 215., 40., 40.),
-        spot(ButtonId::DpiUp, 212., 215., 40., 40.),
-        spot(ButtonId::ProfileCycle, 185., 270., 50., 36.),
+        spot(ButtonId::DpiUp, 62., 70., 52., 46.),
+        spot(ButtonId::DpiDown, 62., 122., 52., 46.),
+        spot(ButtonId::DpiShift, 58., 188., 56., 48.),
+        spot(ButtonId::Forward, 56., 262., 62., 50.),
+        spot(ButtonId::Back, 56., 318., 62., 50.),
+        spot(ButtonId::WheelTiltLeft, 170., 62., 29., 86.),
+        spot(ButtonId::MiddleClick, 199., 62., 24., 86.),
+        spot(ButtonId::WheelTiltRight, 223., 62., 29., 86.),
+        spot(ButtonId::ProfileCycle, 196., 194., 30., 36.),
     ]
 }
 

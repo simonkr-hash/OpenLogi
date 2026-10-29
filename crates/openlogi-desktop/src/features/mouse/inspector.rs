@@ -178,6 +178,7 @@ fn button_inspector(
             pal,
         ))
         .child(current_action_card(&action, picker, pal))
+        .child(shortcut_field(picker.shortcut, &on_pick, pal))
         .when(overridden, |panel| {
             let observer = picker.view.clone();
             panel.child(
@@ -223,7 +224,7 @@ fn button_inspector(
                 "inspector-action",
                 Some(&action),
                 picker.search,
-                picker.shortcut,
+                None,
                 &on_pick,
                 pal,
                 cx,
@@ -277,7 +278,7 @@ fn inherited_gesture_inspector(
                 "inspector-gesture-override",
                 None,
                 picker.search,
-                picker.shortcut,
+                Some(picker.shortcut),
                 &on_pick,
                 pal,
                 cx,
@@ -341,7 +342,7 @@ fn gesture_inspector(
                 "inspector-gesture-action",
                 Some(&current),
                 picker.search,
-                picker.shortcut,
+                Some(picker.shortcut),
                 &on_pick,
                 pal,
                 cx,
@@ -649,7 +650,7 @@ fn action_library(
     id_prefix: &'static str,
     current: Option<&Action>,
     action_search: &Entity<InputState>,
-    shortcut_input: &Entity<InputState>,
+    shortcut_input: Option<&Entity<InputState>>,
     on_pick: &PickFn,
     pal: Palette,
     cx: &Context<MouseModelView>,
@@ -661,7 +662,9 @@ fn action_library(
         .pt_1()
         .child(editor_section(tr!("actions.actions"), pal))
         .child(control_input(action_search).cleanable(true))
-        .child(shortcut_field(shortcut_input, on_pick, pal))
+        .when_some(shortcut_input, |library, input| {
+            library.child(shortcut_field(input, on_pick, pal))
+        })
         .child(
             v_flex()
                 .gap_0p5()

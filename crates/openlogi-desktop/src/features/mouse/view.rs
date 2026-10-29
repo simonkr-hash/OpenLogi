@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, FocusHandle, Focusable, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Render, RenderOnce,
-    StatefulInteractiveElement as _, Styled, Subscription, Window, canvas, div, hsla, img,
+    InteractiveElement, IntoElement, ParentElement, PathBuilder, Render, RenderOnce,
+    StatefulInteractiveElement as _, Styled, Subscription, Window, canvas, div, hsla, img, point,
     prelude::FluentBuilder as _, px, rgb, svg,
 };
 use gpui_base::Button as BaseButton;
@@ -858,6 +858,39 @@ impl RenderOnce for Silhouette {
     }
 }
 
+/// Top-down outline of the G502 X Plus as cubic Béziers in
+/// [`MOUSE_MODEL_SIZE`] units: `[start, c1, c2, end]` per segment, clockwise
+/// from the front-left. Straight edges are degenerate cubics.
+const G502_BODY: [[(f32, f32); 4]; 9] = [
+    [(118., 30.), (150., 8.), (270., 8.), (305., 30.)],
+    [(305., 30.), (330., 60.), (345., 200.), (340., 330.)],
+    [(340., 330.), (335., 440.), (310., 520.), (245., 545.)],
+    [(245., 545.), (190., 556.), (140., 535.), (120., 480.)],
+    [(120., 480.), (108., 440.), (112., 400.), (100., 380.)],
+    [(100., 380.), (70., 372.), (52., 350.), (52., 320.)],
+    [(52., 320.), (52., 300.), (52., 270.), (52., 250.)],
+    [(52., 250.), (52., 228.), (70., 218.), (96., 214.)],
+    [(96., 214.), (108., 120.), (108., 70.), (118., 30.)],
+];
+
+/// The body outline as a closed polyline in model units.
+fn g502_outline() -> Vec<(f32, f32)> {
+    const STEPS: u8 = 14;
+    let mut points = Vec::new();
+    for [p0, p1, p2, p3] in &G502_BODY {
+        for step in 0..STEPS {
+            let t = f32::from(step) / f32::from(STEPS);
+            let u = 1. - t;
+            let (a, b, c, d) = (u * u * u, 3. * u * u * t, 3. * u * t * t, t * t * t);
+            points.push((
+                a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0,
+                a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1,
+            ));
+        }
+    }
+    points
+}
+
 /// Top-down drawing of the G502 X Plus, authored in [`MOUSE_MODEL_SIZE`] units
 /// and scaled to the canvas. The button zones line up with
 /// [`super::hotspots::spy_hotspots`]; move them together.
@@ -872,6 +905,7 @@ impl RenderOnce for G502Silhouette {
         let pal = theme::palette(cx);
         let s = self.w / MOUSE_MODEL_SIZE.0;
         let dark = hsla(0., 0., 0.25, 1.0);
+        let key = hsla(0., 0., 0.07, 1.0);
         // One rounded block in model units: `(x, y, w, h, corner radius)`.
         let block = move |(x, y, w, h, r): (f32, f32, f32, f32, f32)| {
             div()
@@ -882,36 +916,49 @@ impl RenderOnce for G502Silhouette {
                 .h(px(h * s))
                 .rounded(px(r * s))
         };
+        let (fill, stroke) = (pal.muted, pal.text_muted);
+        let shell = canvas(
+            |_, _, _| (),
+            move |bounds, (), window, _| {
+                let origin = bounds.origin;
+                let to_screen =
+                    |(x, y): (f32, f32)| point(origin.x + px(x * s), origin.y + px(y * s));
+                let outline: Vec<_> = g502_outline().into_iter().map(to_screen).collect();
+                let mut body = PathBuilder::fill();
+                body.add_polygon(&outline, true);
+                if let Ok(path) = body.build() {
+                    window.paint_path(path, fill);
+                }
+                let mut edge = PathBuilder::stroke(px(1.5));
+                edge.add_polygon(&outline, true);
+                if let Ok(path) = edge.build() {
+                    window.paint_path(path, stroke);
+                }
+            },
+        )
+        .size_full();
         div()
             .absolute()
             .inset_0()
             .w(px(self.w))
             .h(px(self.h))
-            // Palm shell and the thumb rest on the left.
-            .child(
-                block((95., 8., 230., 544., 105.))
-                    .border_1()
-                    .border_color(pal.text_muted)
-                    .bg(pal.muted),
-            )
-            .child(
-                block((52., 235., 80., 235., 38.))
-                    .border_1()
-                    .border_color(pal.text_muted)
-                    .bg(pal.muted),
-            )
-            // Left and right click plates with the wheel channel between them.
-            .child(block((105., 18., 60., 190., 30.)).border_1().border_color(pal.border))
-            .child(block((255., 18., 60., 190., 30.)).border_1().border_color(pal.border))
-            .child(block((199., 90., 22., 74., 11.)).bg(dark))
-            // DPI cluster and profile button.
-            .child(block((172., 219., 32., 32., 8.)).bg(dark))
-            .child(block((216., 219., 32., 32., 8.)).bg(dark))
-            .child(block((189., 274., 42., 28., 14.)).bg(dark))
-            // Thumb buttons: back, forward, sniper.
-            .child(block((62., 254., 52., 48., 12.)).bg(dark))
-            .child(block((62., 316., 52., 48., 12.)).bg(dark))
-            .child(block((62., 396., 52., 48., 12.)).bg(dark))
+            .child(shell)
+            // Left and right click plates with the wheel between them.
+            .child(block((112., 22., 91., 193., 30.)).border_1().border_color(pal.border))
+            .child(block((219., 22., 93., 193., 30.)).border_1().border_color(pal.border))
+            .child(block((199., 62., 24., 86., 12.)).bg(key))
+            // Free-spin lock under the wheel: a switch, not a button.
+            .child(block((201., 156., 20., 30., 7.)).bg(dark))
+            // Profile button.
+            .child(block((196., 194., 30., 36., 10.)).bg(key))
+            // Left edge, front to back: G8, G7, DPI shift, G5, G4.
+            .child(block((62., 70., 52., 46., 10.)).bg(key))
+            .child(block((62., 122., 52., 46., 10.)).bg(key))
+            .child(block((58., 188., 56., 48., 12.)).bg(key))
+            .child(block((56., 262., 62., 50., 12.)).bg(key))
+            .child(block((56., 318., 62., 50., 12.)).bg(key))
+            // Battery / mode LED.
+            .child(block((124., 42., 10., 36., 5.)).bg(hsla(0.4, 0.7, 0.5, 1.0)))
     }
 }
 
