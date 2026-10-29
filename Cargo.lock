@@ -1526,6 +1526,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmic-protocols"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa7c156d3b5815830a795eb35d6bac833a72cede4861e9eda935d4ffa37415ff"
+dependencies = [
+ "bitflags 2.13.1",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+ "wayland-scanner",
+]
+
+[[package]]
 name = "cosmic-text"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5812,6 +5826,7 @@ dependencies = [
  "block2 0.6.2",
  "core-foundation 0.10.0",
  "core-graphics 0.25.0",
+ "cosmic-protocols",
  "ctrlc",
  "evdev",
  "foreign-types-shared",

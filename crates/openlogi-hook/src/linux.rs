@@ -537,6 +537,7 @@ fn device_thread(
 
 // ── foreground-application observation ──────────────────────────────────────
 
+mod cosmic_toplevel;
 mod gnome_shell;
 mod wlr_foreign_toplevel;
 
@@ -970,12 +971,16 @@ fn x11_candidate() -> Option<Box<dyn FrontmostSource>> {
 }
 
 /// Wayland-native frontmost backends, in priority order: the wlroots
-/// foreign-toplevel protocol (sway, Hyprland, river, …) and the GNOME Shell
-/// D-Bus extension (Mutter). AT-SPI remains a future fallback. Compositors that
+/// foreign-toplevel protocol (sway, Hyprland, river, …), the GNOME Shell
+/// D-Bus extension (Mutter) and COSMIC's own toplevel-info protocol. AT-SPI remains a future fallback. Compositors that
 /// support none of these fall through to the X11/XWayland path (which resolves
 /// XWayland windows, `None` for native Wayland apps).
 fn wayland_candidates() -> Vec<Candidate> {
-    vec![wlr_foreign_toplevel::candidate, gnome_shell::candidate]
+    vec![
+        wlr_foreign_toplevel::candidate,
+        gnome_shell::candidate,
+        cosmic_toplevel::candidate,
+    ]
 }
 
 /// Pick the frontmost backend for this session, trying each candidate in order
