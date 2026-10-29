@@ -881,11 +881,14 @@ fn g502_outline() -> Vec<(f32, f32)> {
         for step in 0..STEPS {
             let t = f32::from(step) / f32::from(STEPS);
             let u = 1. - t;
-            let (a, b, c, d) = (u * u * u, 3. * u * u * t, 3. * u * t * t, t * t * t);
-            points.push((
-                a * p0.0 + b * p1.0 + c * p2.0 + d * p3.0,
-                a * p0.1 + b * p1.1 + c * p2.1 + d * p3.1,
-            ));
+            let weights = [u * u * u, 3. * u * u * t, 3. * u * t * t, t * t * t];
+            let at = |pick: fn(&(f32, f32)) -> f32| {
+                weights[0] * pick(p0)
+                    + weights[1] * pick(p1)
+                    + weights[2] * pick(p2)
+                    + weights[3] * pick(p3)
+            };
+            points.push((at(|p| p.0), at(|p| p.1)));
         }
     }
     points
