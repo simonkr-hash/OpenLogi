@@ -34,8 +34,8 @@ The script stops running instances, offers to remove a pacman package that owns
 build takes about ten minutes. Your config in `~/.config/openlogi` is not
 touched. Remove everything with `sh packaging/linux/uninstall.sh`.
 
-Status: written for Arch/CachyOS and run there by hand step by step; the script
-itself is only syntax-checked.
+Status: the script has been run end to end on CachyOS (COSMIC, Wayland) with a
+G502 X PLUS; the agent starts at login and the GUI opens from the menu.
 
 ## Useful details
 
