@@ -21,7 +21,7 @@ fi
 
 echo "==> Installing build tools and libraries"
 sudo pacman -S --needed --noconfirm \
-  git curl base-devel clang pkgconf rustup \
+  git curl acl base-devel clang pkgconf rustup \
   systemd-libs fontconfig freetype2 openssl zstd \
   wayland libxkbcommon libxkbcommon-x11 libx11 libxcb \
   vulkan-icd-loader

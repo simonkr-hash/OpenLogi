@@ -87,6 +87,15 @@ fi
 echo "==> Installing to /usr"
 sh "$SCRIPT_DIR/install.sh" --from-source --prefix /usr
 
+# On a fresh system the udev rule only reaches /dev/uinput after the next
+# boot or login, and the agent just started without it. Grant the access now
+# so the buttons work immediately; the rule keeps it after a reboot.
+if [ -e /dev/uinput ] && [ ! -w /dev/uinput ] && command -v setfacl >/dev/null 2>&1; then
+  echo "==> Granting $USER access to /dev/uinput for this session"
+  sudo setfacl -m "u:$USER:rw" /dev/uinput || true
+  systemctl --user restart openlogi-agent.service || true
+fi
+
 echo ""
 echo "Done. Open OpenLogi from the application menu, or run: openlogi-desktop"
 echo "If the mouse is not picked up right away, log out and back in once so the"
