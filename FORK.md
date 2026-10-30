@@ -37,6 +37,32 @@ touched. Remove everything with `sh packaging/linux/uninstall.sh`.
 Status: the script has been run end to end on CachyOS (COSMIC, Wayland) with a
 G502 X PLUS; the agent starts at login and the GUI opens from the menu.
 
+## Update
+
+The checkout is the source of truth, so updating is a rebuild and reinstall
+(incremental after the first build, config untouched):
+
+```sh
+cd ~/OpenLogi && sh packaging/linux/install-fork.sh
+```
+
+Pull first if the change came from the remote: `git pull --ff-only`.
+
+## Games through Lutris / Proton
+
+Lutris starts every game through `umu-run`, so all their windows share the
+class `steam_app_default`. For such a window the profile identifier is the
+lower-cased Windows path of its executable, read from `_NET_WM_PID` and
+`/proc/<pid>/cmdline` (`crates/openlogi-hook/src/linux/foreground/wine.rs`).
+Key the profile by `exe:<filename>`:
+
+```toml
+[devices."unit:8cee02c3".per_app_bindings."exe:wow.exe".DpiShift]
+CustomShortcut = "6"
+```
+
+Steam games with their own id (`steam_app_2679100`) keep that class as key.
+
 ## Useful details
 
 - The agent reads its log level from `OPENLOGI_LOG` (not `RUST_LOG`):

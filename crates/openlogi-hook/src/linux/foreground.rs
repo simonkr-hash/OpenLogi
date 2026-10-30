@@ -23,6 +23,7 @@ use crate::ForegroundApp;
 mod cosmic_toplevel;
 mod gnome_shell;
 mod stop;
+mod wine;
 mod wlr_foreign_toplevel;
 pub(super) mod x11;
 
@@ -60,6 +61,13 @@ trait FrontmostSource: Send {
 }
 
 type PublishAppId = Arc<dyn Fn(Option<String>) + Send + Sync>;
+
+/// The application a backend's identifier stands for. A Wayland-native backend
+/// reports an XWayland Wine window only by its launcher's generic class, which
+/// the X11 server can refine to the window's executable.
+fn foreground_app(id: String) -> ForegroundApp {
+    ForegroundApp::unnamed(x11::xwayland_wine_app_id(&id).unwrap_or(id))
+}
 
 /// Delay between reconnect attempts after an already-selected native backend
 /// loses its transport. Normal delivery blocks on native events with no tick.
@@ -289,7 +297,7 @@ impl Publication {
     }
 
     fn publish(&self, app_id: Option<String>) {
-        let app = app_id.map(ForegroundApp::unnamed);
+        let app = app_id.map(foreground_app);
         let (version, subscribers) = {
             let mut state = lock_unpoisoned(&self.state);
             if state.initialized && state.current == app {
@@ -381,7 +389,7 @@ impl FrontmostController {
                 .source
                 .as_mut()
                 .and_then(|source| source.frontmost_app_id())
-                .map(ForegroundApp::unnamed),
+                .map(foreground_app),
         }
     }
 

@@ -23,18 +23,61 @@ use x11rb::rust_connection::RustConnection;
 
 use super::{
     FrontmostSource, PollResult, PublishAppId, RECONNECT_DELAY, StopToken, poll_source_or_stop,
+    wine,
 };
 
 #[cfg(test)]
 mod tests;
 
-/// The WM_CLASS class component is the shared foreground/pointer profile ID.
+/// The WM_CLASS class component is the shared foreground/pointer profile ID,
+/// except for a Wine window whose class only names its launcher's shared prefix:
+/// that one is identified by its executable (see [`wine`]).
 pub(in crate::linux) fn window_app_id(conn: &RustConnection, window: Window) -> Option<String> {
+    let class = window_class(conn, window)?;
+    Some(wine_executable(conn, window, &class).unwrap_or(class))
+}
+
+fn window_class(conn: &RustConnection, window: Window) -> Option<String> {
     let wm = WmClass::get(conn, window).ok()?.reply_unchecked().ok()??;
     std::str::from_utf8(wm.class())
         .ok()
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
+}
+
+/// The executable behind a window of a generic Wine `class`, from the window's
+/// `_NET_WM_PID`.
+fn wine_executable(conn: &RustConnection, window: Window, class: &str) -> Option<String> {
+    if !wine::is_generic_class(class) {
+        return None;
+    }
+    let net_wm_pid = conn
+        .intern_atom(false, b"_NET_WM_PID")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let pid = conn
+        .get_property(false, window, net_wm_pid, AtomEnum::CARDINAL, 0, 1)
+        .ok()?
+        .reply()
+        .ok()?
+        .value32()?
+        .next()?;
+    wine::executable_of(pid)
+}
+
+/// The identifier of the XWayland window a Wayland-native backend reported only
+/// by its generic Wine `class`, which carries no pid to look up.
+///
+/// Every client of that class is resolved; when they are one executable the
+/// answer is unambiguous, and when they differ the focused window decides.
+/// `None` leaves the reported class in place.
+pub(super) fn xwayland_wine_app_id(class: &str) -> Option<String> {
+    if !wine::is_generic_class(class) {
+        return None;
+    }
+    X11Source::connect()?.generic_wine_window_id()
 }
 
 /// What one `PropertyNotify` means for the published application id.
@@ -149,6 +192,48 @@ impl X11Source {
         // `WM_CLASS`, and watching it would let `watch` clear the root's own
         // `_NET_ACTIVE_WINDOW` subscription.
         (window != x11rb::NONE && window != self.root).then_some(window)
+    }
+
+    fn generic_wine_window_id(&self) -> Option<String> {
+        let client_list = self
+            .conn
+            .intern_atom(false, b"_NET_CLIENT_LIST")
+            .ok()?
+            .reply()
+            .ok()?
+            .atom;
+        let windows: Vec<Window> = self
+            .conn
+            .get_property(
+                false,
+                self.root,
+                client_list,
+                AtomEnum::WINDOW,
+                0,
+                u32::MAX / 4,
+            )
+            .ok()?
+            .reply()
+            .ok()?
+            .value32()?
+            .collect();
+        let resolved: Vec<(Window, String)> = windows
+            .into_iter()
+            .filter(|window| {
+                window_class(&self.conn, *window)
+                    .is_some_and(|class| wine::is_generic_class(&class))
+            })
+            .filter_map(|window| Some((window, window_app_id(&self.conn, window)?)))
+            .filter(|(_, id)| !wine::is_generic_class(id))
+            .collect();
+        let (_, first) = resolved.first()?;
+        if resolved.iter().all(|(_, id)| id == first) {
+            return Some(first.clone());
+        }
+        let active = self.active_window()?;
+        resolved
+            .into_iter()
+            .find_map(|(window, id)| (window == active).then_some(id))
     }
 
     /// Move the `WM_CLASS` watch to the focused window, then read its class.

@@ -135,7 +135,8 @@ fn entry_for<V>(
 
 /// The `exe:<filename>` selector of a Windows executable path, or `None` for
 /// an identifier that names no executable.
-fn executable_selector(app: &str) -> Option<String> {
+#[must_use]
+pub fn executable_selector(app: &str) -> Option<String> {
     let (_, executable_name) = app.rsplit_once(['\\', '/'])?;
     Path::new(executable_name)
         .extension()
