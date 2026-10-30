@@ -1080,6 +1080,12 @@ mod tests {
         }
     }
 
+    /// Wheel tilt is silent in Host mode, so it joins every armed G502 set.
+    fn with_silent_tilt(mut buttons: Vec<ButtonId>) -> Vec<ButtonId> {
+        buttons.extend([ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight]);
+        buttons
+    }
+
     #[test]
     fn one_bound_g502_spy_button_arms_all_four_siblings() {
         let mut cfg = Config::default();
@@ -1092,7 +1098,7 @@ mod tests {
         let plan = plan_for_device(&cfg, "04099", route(), None, 0, true);
         assert_eq!(
             plan.target.spec.spy_buttons,
-            ButtonId::SPY_BUTTONS.to_vec(),
+            with_silent_tilt(ButtonId::SPY_BUTTONS.to_vec()),
             "Host mode takes over the whole extra-button cluster"
         );
         assert_eq!(
@@ -1122,7 +1128,7 @@ mod tests {
         let plan = plan_for_device(&cfg, "04099", route(), None, 0, true);
         assert_eq!(
             plan.target.spec.spy_buttons,
-            ButtonId::SPY_BUTTONS.to_vec(),
+            with_silent_tilt(ButtonId::SPY_BUTTONS.to_vec()),
             "a long-only G6 binding must still take Host mode"
         );
     }
@@ -1169,7 +1175,7 @@ mod tests {
         let plan = plan_for_device(&cfg, "unit:75c69495", route(), None, 0, true);
         assert_eq!(
             plan.target.spec.spy_buttons,
-            ButtonId::SPY_BUTTONS.to_vec(),
+            with_silent_tilt(ButtonId::SPY_BUTTONS.to_vec()),
             "a persisted HID++ model id must arm Host mode under the unit key"
         );
         assert_eq!(plan.target.spec.spy_model_key.as_deref(), Some("04099"));
@@ -1192,7 +1198,7 @@ mod tests {
         let plan = plan_for_device(&cfg, "04099", route(), None, 0, true);
         assert_eq!(
             plan.target.spec.spy_buttons,
-            vec![ButtonId::Back, ButtonId::Forward],
+            with_silent_tilt(vec![ButtonId::Back, ButtonId::Forward]),
             "no 0x1b04: remapped G4/G5 must enter Host mode"
         );
         assert!(

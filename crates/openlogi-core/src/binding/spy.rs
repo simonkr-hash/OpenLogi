@@ -45,6 +45,10 @@ pub struct SpyModel {
     /// OS-hook buttons this model remaps through spy when they leave their
     /// native default. Empty when `0x1b04` already owns those controls.
     pub spy_owned_os_buttons: &'static [ButtonId],
+    /// Buttons that send nothing in Host mode, so they must be armed whenever
+    /// Host mode is entered or they go dead (their default is then replayed
+    /// from the spy event).
+    pub host_silent_buttons: &'static [ButtonId],
 }
 
 /// Locked spy models. Only rows backed by a live watch dump belong here.
@@ -53,7 +57,16 @@ pub const SPY_MODELS: &[SpyModel] = &[SpyModel {
     extra_buttons: &ButtonId::SPY_BUTTONS,
     // No `0x1b04` on this mouse: remapped G4/G5 must be suppressed in the
     // `0x8110` mapping or the OS keeps seeing hardware Back/Forward.
-    spy_owned_os_buttons: &[ButtonId::Back, ButtonId::Forward],
+    // Wheel tilt (bits 6 and 7) has no `0x1b04` CID here either, and it goes
+    // silent in Host mode (verified with G HUB closed), so both directions
+    // are armed together with whatever takes Host mode.
+    spy_owned_os_buttons: &[
+        ButtonId::Back,
+        ButtonId::Forward,
+        ButtonId::WheelTiltLeft,
+        ButtonId::WheelTiltRight,
+    ],
+    host_silent_buttons: &[ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight],
 }];
 
 impl SpyModel {
@@ -88,6 +101,13 @@ impl SpyModel {
                 armed.push(*button);
             }
         }
+        if !armed.is_empty() {
+            for button in self.host_silent_buttons {
+                if !armed.contains(button) {
+                    armed.push(*button);
+                }
+            }
+        }
         armed
     }
 }
@@ -110,7 +130,17 @@ mod tests {
         assert_eq!(model.extra_buttons, ButtonId::SPY_BUTTONS.as_slice());
         assert_eq!(
             model.spy_owned_os_buttons,
-            [ButtonId::Back, ButtonId::Forward].as_slice()
+            [
+                ButtonId::Back,
+                ButtonId::Forward,
+                ButtonId::WheelTiltLeft,
+                ButtonId::WheelTiltRight
+            ]
+            .as_slice()
+        );
+        assert_eq!(
+            model.host_silent_buttons,
+            [ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight].as_slice()
         );
         assert_eq!(SpyModel::for_hidpp_key("2b042"), None);
         assert_eq!(SpyModel::for_hidpp_key("0409f"), None);
@@ -121,17 +151,53 @@ mod tests {
     fn extras_arm_the_cluster_without_native_side_buttons() {
         let model = SpyModel::for_hidpp_key(G502_X_PLUS_CONFIG_KEY).expect("G502 row");
         let bindings = BTreeMap::from([(ButtonId::DpiUp, Binding::Single(Action::Copy))]);
-        assert_eq!(
-            model.armed_buttons(&bindings),
-            ButtonId::SPY_BUTTONS.to_vec()
-        );
+        let mut expected = ButtonId::SPY_BUTTONS.to_vec();
+        expected.extend([ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight]);
+        assert_eq!(model.armed_buttons(&bindings), expected);
     }
 
     #[test]
     fn remapped_side_buttons_join_the_armed_set() {
         let model = SpyModel::for_hidpp_key(G502_X_PLUS_CONFIG_KEY).expect("G502 row");
         let bindings = BTreeMap::from([(ButtonId::Back, Binding::Single(Action::PreviousDesktop))]);
-        assert_eq!(model.armed_buttons(&bindings), vec![ButtonId::Back]);
+        assert_eq!(
+            model.armed_buttons(&bindings),
+            vec![
+                ButtonId::Back,
+                ButtonId::WheelTiltLeft,
+                ButtonId::WheelTiltRight
+            ]
+        );
+    }
+
+    #[test]
+    fn remapped_wheel_tilt_takes_host_mode_for_both_directions() {
+        let model = SpyModel::for_hidpp_key(G502_X_PLUS_CONFIG_KEY).expect("G502 row");
+        let bindings = BTreeMap::from([(
+            ButtonId::WheelTiltLeft,
+            Binding::Single(Action::PreviousDesktop),
+        )]);
+        assert_eq!(
+            model.armed_buttons(&bindings),
+            vec![ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight],
+            "the other direction is silent in Host mode, so it joins the set"
+        );
+    }
+
+    #[test]
+    fn default_wheel_tilt_alone_stays_in_onboard_mode() {
+        let model = SpyModel::for_hidpp_key(G502_X_PLUS_CONFIG_KEY).expect("G502 row");
+        let bindings = BTreeMap::from([
+            (
+                ButtonId::WheelTiltLeft,
+                Binding::Single(default_binding(ButtonId::WheelTiltLeft)),
+            ),
+            (
+                ButtonId::WheelTiltRight,
+                Binding::Single(default_binding(ButtonId::WheelTiltRight)),
+            ),
+        ]);
+        assert!(model.armed_buttons(&bindings).is_empty());
     }
 
     #[test]
@@ -144,9 +210,11 @@ mod tests {
                 Action::MissionControl,
             )),
         )]);
+        let mut expected = ButtonId::SPY_BUTTONS.to_vec();
+        expected.extend([ButtonId::WheelTiltLeft, ButtonId::WheelTiltRight]);
         assert_eq!(
             model.armed_buttons(&bindings),
-            ButtonId::SPY_BUTTONS.to_vec(),
+            expected,
             "a long-only G6 binding must take Host mode for the whole extra cluster"
         );
     }
@@ -159,7 +227,11 @@ mod tests {
             (ButtonId::Forward, Binding::Single(Action::NextDesktop)),
         ]);
         let mut expected = ButtonId::SPY_BUTTONS.to_vec();
-        expected.push(ButtonId::Forward);
+        expected.extend([
+            ButtonId::Forward,
+            ButtonId::WheelTiltLeft,
+            ButtonId::WheelTiltRight,
+        ]);
         assert_eq!(model.armed_buttons(&bindings), expected);
     }
 }
