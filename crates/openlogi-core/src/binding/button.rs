@@ -67,6 +67,17 @@ pub enum ButtonId {
     /// Logi metadata slot `SLOT_NAME_RIGHT_SCROLL_BUTTON`. Counterpart to
     /// [`ButtonId::WheelTiltLeft`].
     WheelTiltRight,
+    /// G502 X Plus G6 — hold-to-shift ("sniper") DPI. Captured over HID++
+    /// `0x8110` spy events, not the OS hook. Kept out of [`ButtonId::ALL`] so
+    /// MX popovers stay clean; seeded only for [`G502_X_PLUS_CONFIG_KEY`].
+    DpiShift,
+    /// G502 X Plus G8 — DPI up. Spy-captured like [`ButtonId::DpiShift`].
+    DpiUp,
+    /// G502 X Plus G7 — DPI down. Spy-captured like [`ButtonId::DpiShift`].
+    DpiDown,
+    /// G502 X Plus G9 — onboard profile cycle. Spy-captured like
+    /// [`ButtonId::DpiShift`].
+    ProfileCycle,
     /// A keyboard key, by the HID++ `0x1b04` control it reports as. Diverted
     /// over HID++ while bound (the OS hook never sees these keys); left on its
     /// native firmware function otherwise.
@@ -76,6 +87,10 @@ pub enum ButtonId {
     /// physical F-row order sorts by catalog position instead.
     Control(Cid),
 }
+
+/// Lightspeed / wired G502 X Plus (`wpid=4099`). The `config_key` is
+/// `format!("{:x}{:04x}", extended_model_id, model_ids[0])` with ext = 0.
+pub const G502_X_PLUS_CONFIG_KEY: &str = "04099";
 
 impl ButtonId {
     /// Every rebindable mouse button in declaration (physical front-to-side)
@@ -111,6 +126,27 @@ impl ButtonId {
             Self::Control(cid) => Some(cid),
             _ => None,
         }
+    }
+
+    /// Extra G502 X Plus buttons captured through `0x8110` Mouse Button Spy.
+    /// Kept out of [`ButtonId::ALL`] so MX-line popovers and default seeding
+    /// stay unchanged. [`crate::bindings::button_bindings_for`] seeds these
+    /// only for a [`super::SpyModel`] row — today [`G502_X_PLUS_CONFIG_KEY`],
+    /// either passed directly or recovered from the device's persisted identity.
+    pub const SPY_BUTTONS: [ButtonId; 4] = [
+        ButtonId::DpiShift,
+        ButtonId::DpiUp,
+        ButtonId::DpiDown,
+        ButtonId::ProfileCycle,
+    ];
+
+    /// Extra spy-remappable buttons for this HID++ model id, if it has a
+    /// locked [`super::SpyModel`] row. Used by the GUI to decide whether DPI
+    /// Up/Down and the other extras exist — MX and undocumented cousins get
+    /// [`None`].
+    #[must_use]
+    pub fn spy_buttons_for_config_key(key: &str) -> Option<&'static [ButtonId]> {
+        super::spy::SpyModel::for_hidpp_key(key).map(|model| model.extra_buttons)
     }
 
     /// Whether this button is one the OS hook (macOS `CGEventTap` / Linux evdev)
@@ -175,7 +211,7 @@ impl ButtonId {
     /// string form read this one table; `unit_name` is a match without a
     /// wildcard over the unit variants, so a new variant that is missing here
     /// fails to compile rather than failing to parse.
-    const UNIT_NAMES: [(ButtonId, &'static str); 13] = [
+    const UNIT_NAMES: [(ButtonId, &'static str); 17] = [
         (ButtonId::LeftClick, "LeftClick"),
         (ButtonId::RightClick, "RightClick"),
         (ButtonId::MiddleClick, "MiddleClick"),
@@ -189,6 +225,10 @@ impl ButtonId {
         (ButtonId::HapticPanel, "HapticPanel"),
         (ButtonId::WheelTiltLeft, "WheelTiltLeft"),
         (ButtonId::WheelTiltRight, "WheelTiltRight"),
+        (ButtonId::DpiShift, "DpiShift"),
+        (ButtonId::DpiUp, "DpiUp"),
+        (ButtonId::DpiDown, "DpiDown"),
+        (ButtonId::ProfileCycle, "ProfileCycle"),
     ];
 
     /// The name a mouse button is persisted under. Keyboard controls have no
@@ -208,6 +248,10 @@ impl ButtonId {
             ButtonId::HapticPanel => Self::UNIT_NAMES[10].1,
             ButtonId::WheelTiltLeft => Self::UNIT_NAMES[11].1,
             ButtonId::WheelTiltRight => Self::UNIT_NAMES[12].1,
+            ButtonId::DpiShift => Self::UNIT_NAMES[13].1,
+            ButtonId::DpiUp => Self::UNIT_NAMES[14].1,
+            ButtonId::DpiDown => Self::UNIT_NAMES[15].1,
+            ButtonId::ProfileCycle => Self::UNIT_NAMES[16].1,
             ButtonId::Control(_) => return None,
         })
     }
@@ -238,6 +282,10 @@ impl ButtonId {
             ButtonId::ThumbwheelScrollDown => "Thumb Wheel Down",
             ButtonId::GestureButton => "Gesture Button",
             ButtonId::HapticPanel => "Haptic Panel",
+            ButtonId::DpiShift => "DPI Shift",
+            ButtonId::DpiUp => "DPI Up",
+            ButtonId::DpiDown => "DPI Down",
+            ButtonId::ProfileCycle => "Profile Cycle",
             ButtonId::Control(cid) => return cid.label(),
         })
     }
@@ -259,6 +307,10 @@ impl ButtonId {
             ButtonId::ThumbwheelScrollDown => "pointer.thumb_wheel_down",
             ButtonId::GestureButton => "actions.gesture_button",
             ButtonId::HapticPanel => "actions.haptic_panel",
+            ButtonId::DpiShift => "actions.dpi_shift",
+            ButtonId::DpiUp => "actions.dpi_up",
+            ButtonId::DpiDown => "actions.dpi_down",
+            ButtonId::ProfileCycle => "actions.profile_cycle",
             ButtonId::Control(cid) => cid.translation_key(),
         }
     }

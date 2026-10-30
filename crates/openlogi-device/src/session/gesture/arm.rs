@@ -12,6 +12,7 @@ use openlogi_core::binding::ButtonId;
 use tracing::{debug, warn};
 
 use super::main_wheel::{self, ArmedMainWheel, MainWheelDivert};
+use super::spy::ArmedSpy;
 use super::{CaptureSpec, CapturedInput};
 use crate::reprog_controls::{self, ReprogControlsV4};
 use crate::session::capture::{ReportingChangeStream, open_device, subscribe_reporting_changes};
@@ -61,6 +62,9 @@ pub(super) struct ArmedControls {
     pub(super) thumb: Option<ArmedThumbwheel>,
     /// `0x2121` main wheel, present when its movement reports are diverted.
     pub(super) main_wheel: Option<ArmedMainWheel>,
+    /// Host-mode `0x8110` spy session, present when the model's extra buttons
+    /// are remapped.
+    pub(super) spy: Option<ArmedSpy>,
 }
 
 pub(super) struct ArmedThumbwheel {
@@ -117,6 +121,7 @@ impl ArmedControls {
             reporting,
             thumb,
             main_wheel,
+            spy,
             ..
         } = self;
         let reprog =
@@ -128,6 +133,7 @@ impl ArmedControls {
             main_wheel
                 .as_ref()
                 .map(|wheel| HiResWheelRestore::new(wheel.feature_index)),
+            spy.and_then(ArmedSpy::into_restore),
         )
     }
 
@@ -156,6 +162,11 @@ impl ArmedControls {
             && let Err(error) = wheel.divert().await
         {
             warn!(?error, "main-wheel re-divert after wake failed");
+        }
+        if let Some(spy) = self.spy.as_ref()
+            && let Err(error) = spy.rearm().await
+        {
+            warn!(?error, "spy start after wake failed");
         }
     }
 }
@@ -189,6 +200,7 @@ pub(super) async fn arm_controls(
         && armed.wheel_button_cids.is_empty()
         && armed.thumb.is_none()
         && armed.main_wheel.is_none()
+        && armed.spy.is_none()
     {
         debug!(slot, "no capturable controls — idle session");
     }
@@ -284,6 +296,13 @@ pub(super) async fn arm_controls_into(
         && let Some(info) = device.root().get_feature(HiResWheelFeature::ID).await?
     {
         arm_main_wheel(chan, slot, info.index, requested, armed).await?;
+    }
+
+    // Recorded before the first write, like every other step, so a failed
+    // Host-mode or mapping write still leaves a rollback token.
+    armed.spy = ArmedSpy::prepare(device, chan, slot, spec).await?;
+    if let Some(spy) = armed.spy.as_mut() {
+        spy.apply().await?;
     }
     Ok(())
 }

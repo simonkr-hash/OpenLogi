@@ -155,6 +155,24 @@ impl Binding {
         }
     }
 
+    /// Whether any arm of this binding should fire — including a
+    /// [`LongPress`](Binding::LongPress) whose short action is [`Action::None`].
+    ///
+    /// [`Self::click_action`] is the wrong gate for that shape: a click-less
+    /// long press would look unbound and skip capture / fall through to a
+    /// native default.
+    #[must_use]
+    pub fn has_configured_action(&self) -> bool {
+        match self {
+            Binding::Single(action) => *action != Action::None,
+            Binding::Gesture(map) => map.values().any(|action| *action != Action::None),
+            Binding::LongPress(binding) => {
+                *binding.short() != Action::None || *binding.long() != Action::None
+            }
+            Binding::WheelHold(_) => true,
+        }
+    }
+
     /// The action bound to `direction`, if this is a gesture binding.
     /// The other shapes have no directions and return `None`.
     #[must_use]

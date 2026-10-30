@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use openlogi_core::app::ForegroundApp;
 use openlogi_core::binding::{Binding, ButtonId};
-use openlogi_core::bindings::{button_bindings_for, oshook_gestures_for};
+use openlogi_core::bindings::{button_bindings_for, oshook_gestures_for, spy_model_for_device};
 use openlogi_core::config::{
     AppSettings, Config, ConfigRevision, LightSettings, MouseProfileTarget, canonical_device_key,
 };
@@ -778,6 +778,18 @@ impl Orchestrator {
                 // passive fallback when the physical control cannot arm raw XY.
                 bindings.remove(button);
                 gestures.remove(button);
+            }
+        }
+        if let Some(key) = key
+            && let Some(model) = spy_model_for_device(&self.config, key)
+        {
+            for button in model.armed_buttons(&bindings) {
+                if button.is_os_hook_button() {
+                    // Spy suppresses the firmware HID report; a leftover
+                    // hook binding would double-dispatch if one leaked.
+                    bindings.remove(&button);
+                    gestures.remove(&button);
+                }
             }
         }
         HookMaps {

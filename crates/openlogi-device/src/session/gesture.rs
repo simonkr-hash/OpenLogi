@@ -26,6 +26,7 @@
 mod accum;
 mod arm;
 pub(super) mod main_wheel;
+pub(crate) mod spy;
 
 use std::num::NonZeroU8;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -189,6 +190,16 @@ pub struct CaptureSpec {
     /// mode along with the divert; `None` leaves the wheel native. Inert on a
     /// device without the feature.
     pub divert_main_wheel: Option<MainWheelDivert>,
+    /// Extra buttons captured through `0x8110` spy events. Non-empty only for
+    /// models with a locked spy map (see `openlogi_core::binding::SPY_MODELS`).
+    /// One customized extra arms the whole extra cluster; remapped G4/G5 join
+    /// when the model lists them as spy-owned. Host mode pauses onboard
+    /// profiles for the session.
+    pub spy_buttons: Vec<ButtonId>,
+    /// HID++ model id whose bit table `spy_buttons` came from (`04099`).
+    /// `None` when `spy_buttons` is empty. Required so two cousins can share
+    /// [`ButtonId`]s with different masks.
+    pub spy_model_key: Option<String>,
 }
 
 /// Capture the controls selected by `spec` on `route` until `host.shutdown`
@@ -261,6 +272,7 @@ impl ArmedCapture for GestureCapture {
             wheel_buttons = armed.wheel_button_cids.len(),
             thumbwheel = armed.thumb.is_some(),
             main_wheel = armed.main_wheel.is_some(),
+            spy_buttons = armed.spy.as_ref().map_or(0, |spy| spy.buttons().len()),
             wake_rearm,
             "control capture active"
         );
@@ -300,6 +312,13 @@ impl ArmedCapture for GestureCapture {
             .main_wheel
             .as_ref()
             .map(|wheel| (wheel.feature_index, wheel.per_notch));
+        let spy_index = armed.spy.as_ref().map(spy::ArmedSpy::feature_index);
+        let spy_buttons = armed
+            .spy
+            .as_ref()
+            .map_or(&[][..], spy::ArmedSpy::buttons)
+            .to_vec();
+        let spy_bits = armed.spy.as_ref().map_or(&[][..], spy::ArmedSpy::bits);
         move |msg| {
             if let Some(idx) = reprog_index
                 && let Some(event) = reprog_controls::decode_event(msg, device_index, idx)
@@ -349,7 +368,23 @@ impl ArmedCapture for GestureCapture {
                 } else if let Some(input) = main_wheel::movement_input(event, per_notch) {
                     let _ = sink.send(input);
                 }
+                return;
             }
+            if let Some(idx) = spy_index
+                && let Some(mask) = spy::decode_event(msg, device_index, idx)
+            {
+                accum
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .on_spy_mask(mask, &spy_buttons, spy_bits, &sink);
+            }
+        }
+    }
+
+    async fn start(&mut self) -> Result<(), CaptureError> {
+        match self.armed.spy.as_mut() {
+            Some(spy) => spy.start().await,
+            None => Ok(()),
         }
     }
 

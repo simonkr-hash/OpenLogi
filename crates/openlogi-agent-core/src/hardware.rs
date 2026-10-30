@@ -24,13 +24,14 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use openlogi_core::config::Lighting;
+use openlogi_core::hid::dpi::DpiInfo;
 #[cfg(test)]
 use openlogi_hid::DisableKeysMask;
 use openlogi_hid::{
     CaptureChannelSlot, ChannelRegistry, DeviceIoGate, DeviceRoute, Dpi, FollowerLink,
     FollowerRelease, HidppOperation, HostOs, HostSwitchError, LeadCookie, OsLayoutOutcome,
     PointerSpeed, ReportRate, ScrollResolution, SharedChannel, SmartShiftStatus, WeakSharedChannel,
-    WriteError,
+    WriteError, get_dpi_info_on, set_dpi_on,
 };
 use tokio::time::error::Elapsed;
 use tracing::{debug, info, warn};
@@ -683,6 +684,87 @@ fn one_shot_runtime(label: &str) -> Option<tokio::runtime::Runtime> {
             warn!(error = %e, label, "tokio runtime init failed; write skipped");
             None
         }
+    }
+}
+
+/// Native DPI fallback for the G502 X Plus extras while Host mode has
+/// suppressed the firmware mapping: an unbound DPI up/down or shift press is
+/// carried out here instead.
+#[derive(Clone, Copy, Debug)]
+pub enum SpyNativeDpi {
+    /// Step one stage (or 50 DPI on a continuous list).
+    Step {
+        /// `true` is DPI up.
+        up: bool,
+    },
+    /// Shift key held: write the sensor's minimum DPI.
+    ShiftDown,
+    /// Shift key released: restore the DPI captured on press.
+    ShiftUp,
+}
+
+/// Per-session DPI-shift restore. Cancellation must wait on this slot's mutex
+/// and apply [`SpyNativeDpi::ShiftUp`] before dropping it — `try_lock` +
+/// remove would leave the sensor at minimum DPI.
+#[derive(Debug)]
+pub struct SpyShiftHold {
+    /// DPI to write back on release or session cancel.
+    pub restore: Option<Dpi>,
+    /// Route the shift write used; cancel needs it to restore.
+    pub route: DeviceRoute,
+}
+
+/// Read-modify-write the current sensor DPI for an unbound spy-button press.
+pub async fn apply_spy_native_dpi(
+    access: &DeviceAccess,
+    route: &DeviceRoute,
+    kind: SpyNativeDpi,
+    shift_restore: &mut Option<Dpi>,
+) -> Result<(), WriteError> {
+    if let SpyNativeDpi::ShiftUp = kind {
+        let Some(dpi) = shift_restore.take() else {
+            return Ok(());
+        };
+        return access
+            .op(route)
+            .run(HidppOperation::WriteDpi, move |shared| async move {
+                set_dpi_on(&shared, dpi).await
+            })
+            .await;
+    }
+
+    let info = access
+        .op(route)
+        .run(HidppOperation::ReadDpi, |shared| async move {
+            get_dpi_info_on(&shared).await
+        })
+        .await?;
+    let Some(dpi) = spy_native_target(&info, kind, shift_restore) else {
+        return Ok(());
+    };
+    if dpi == info.current {
+        return Ok(());
+    }
+    access
+        .op(route)
+        .run(HidppOperation::WriteDpi, move |shared| async move {
+            set_dpi_on(&shared, dpi).await
+        })
+        .await
+}
+
+fn spy_native_target(
+    info: &DpiInfo,
+    kind: SpyNativeDpi,
+    shift_restore: &mut Option<Dpi>,
+) -> Option<Dpi> {
+    match kind {
+        SpyNativeDpi::Step { up } => Some(info.capabilities.step(info.current, up)),
+        SpyNativeDpi::ShiftDown => {
+            *shift_restore = Some(info.current);
+            Some(info.capabilities.min())
+        }
+        SpyNativeDpi::ShiftUp => shift_restore.take(),
     }
 }
 

@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock, mpsc};
 use std::time::{Duration, Instant};
 
 use openlogi_core::binding::{Action, Binding, ButtonId};
+use openlogi_hid::DeviceRoute;
 use tracing::{debug, info, warn};
 
 use self::button::{
@@ -23,7 +24,8 @@ use self::button::{
 };
 pub(crate) use self::button::{HidppSessionId, PressToken};
 use crate::hardware::{
-    DeviceAccess, toggle_smartshift_in_background, write_pointer_speed_in_background,
+    DeviceAccess, SpyNativeDpi, SpyShiftHold, apply_spy_native_dpi,
+    toggle_smartshift_in_background, write_pointer_speed_in_background,
 };
 use crate::pointer_speed::{PrecisionPress, SpeedWrite};
 use crate::{DpiCycleState, DpiCycles, PointerSpeeds};
@@ -501,6 +503,70 @@ impl ActionDispatcher {
             binding,
             ActionDispatchTarget::for_pointer(pointer_target, openlogi_hook::frontmost_safari_pid),
         );
+    }
+
+    /// Software DPI for an unbound spy button (DPI up/down/shift) while Host
+    /// mode has suppressed the firmware mapping. Ops for one session are
+    /// serialized so a shift release cannot race ahead of the press that
+    /// captured the restore value.
+    pub(crate) fn spawn_spy_native_dpi(
+        &self,
+        session: HidppSessionId,
+        route: DeviceRoute,
+        kind: SpyNativeDpi,
+        shift: Arc<tokio::sync::Mutex<HashMap<HidppSessionId, SpyShiftHold>>>,
+    ) -> tokio::task::JoinHandle<()> {
+        let access = self.executor.access.clone();
+        tokio::spawn(async move {
+            let mut held = shift.lock().await;
+            let slot = held.entry(session).or_insert_with(|| SpyShiftHold {
+                restore: None,
+                route: route.clone(),
+            });
+            slot.route = route.clone();
+            if let Err(error) = apply_spy_native_dpi(&access, &route, kind, &mut slot.restore).await
+            {
+                warn!(?error, "spy native DPI fallback failed");
+            }
+        })
+    }
+
+    /// Wait for any in-flight shift write, take the restore slot, then write
+    /// it back without holding the session map across HID I/O.
+    ///
+    /// Must not `try_lock` and drop the slot: that loses the restore value
+    /// while Host mode still has firmware sniper-shift suppressed. The map
+    /// lock itself still has to span [`Self::spawn_spy_native_dpi`]'s write
+    /// so a release cannot run with `restore == None`.
+    ///
+    /// Callers must `.await` this before tearing down the capture runtime or
+    /// spawning a replacement session on the same route — a detached task
+    /// would be aborted by `drop(runtime)` or could overwrite a successor's DPI.
+    pub(crate) async fn restore_spy_shift(
+        &self,
+        session: HidppSessionId,
+        shift: Arc<tokio::sync::Mutex<HashMap<HidppSessionId, SpyShiftHold>>>,
+    ) {
+        let slot = {
+            let mut held = shift.lock().await;
+            held.remove(&session)
+        };
+        let Some(mut slot) = slot else {
+            return;
+        };
+        if slot.restore.is_none() {
+            return;
+        }
+        if let Err(error) = apply_spy_native_dpi(
+            &self.executor.access,
+            &slot.route,
+            SpyNativeDpi::ShiftUp,
+            &mut slot.restore,
+        )
+        .await
+        {
+            warn!(?error, "spy DPI-shift restore on cancel failed");
+        }
     }
 
     /// Cancel presses from a HID++ session that is stopping or has died.

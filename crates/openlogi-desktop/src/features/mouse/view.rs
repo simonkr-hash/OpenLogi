@@ -18,9 +18,11 @@ use openlogi_core::binding::{Action, ButtonId, GestureDirection};
 use super::force_sensing::{ForceSensingFacts, ForceSensingSlider, PressForce};
 use super::geometry::{
     LabelDistribution, asset_dimensions_for_png, asset_has_button_labels, asset_hotspots_for_png,
-    default_labels, labels_from_hotspots,
+    labels_from_hotspots,
 };
-use super::hotspots::{Hotspot, MOUSE_MODEL_SIZE, MouseControlId, default_hotspots};
+use super::hotspots::{
+    Hotspot, MOUSE_MODEL_SIZE, MouseControlId, default_hotspots, merge_spy_hotspots,
+};
 use super::inspector::{
     ActionPickerContext, BindingInspectorData, InvalidDrafts, ShortcutMode, binding_inspector,
 };
@@ -62,6 +64,8 @@ const MODEL_HORIZONTAL_RESERVE: f32 =
 const MODEL_MIN_CONTENT_W: f32 = 200.;
 
 struct MouseWorkspaceData<'a> {
+    /// HID++ model key of the current device, for per-model overlays.
+    device_key: Option<&'a str>,
     asset: Option<&'a ResolvedAsset>,
     active: Option<MouseControlId>,
     bindings: &'a BTreeMap<ButtonId, Action>,
@@ -78,6 +82,9 @@ struct MouseWorkspaceData<'a> {
 impl<'a> MouseWorkspaceData<'a> {
     fn read(cx: &'a App) -> Option<Self> {
         AppState::try_read(cx).map(|state| Self {
+            device_key: state
+                .current_record()
+                .map(|record| record.model_key.as_str()),
             asset: state
                 .current_record()
                 .and_then(|record| record.asset.as_ref()),
@@ -113,6 +120,7 @@ impl<'a> MouseWorkspaceData<'a> {
             BTreeMap::new();
         static NO_WHEEL_HOLD: BTreeSet<ButtonId> = BTreeSet::new();
         Self {
+            device_key: None,
             asset: None,
             active: None,
             bindings: &NO_BINDINGS,
@@ -413,6 +421,7 @@ impl Render for MouseModelView {
         self.localize_action_picker_inputs(window, cx);
         let force_sensing = self.sync_selection(window, cx);
         let MouseWorkspaceData {
+            device_key,
             asset,
             active,
             bindings,
@@ -444,7 +453,7 @@ impl Render for MouseModelView {
             mouse_h,
             hotspots,
             labels,
-        } = model_layout(asset, viewport_w, viewport_h, thumbwheel);
+        } = model_layout(asset, viewport_w, viewport_h, thumbwheel, device_key);
         let canvas_h = mouse_h;
 
         let highlight = self.hovered.or(active).or(self.selected);
@@ -562,9 +571,14 @@ fn model_layout(
     viewport_w: f32,
     viewport_h: f32,
     thumbwheel: bool,
+    config_key: Option<&str>,
 ) -> ModelLayout {
     let target_h = (viewport_h - MODEL_VERTICAL_RESERVE).clamp(MODEL_MIN_H, MOUSE_MODEL_SIZE.1);
-    let has_labels = asset.is_none_or(asset_has_button_labels) && viewport_w >= 960.;
+    // A model with spy buttons always shows its labels: the extra buttons have
+    // no other way to be told apart.
+    let spy_model =
+        config_key.is_some_and(|key| ButtonId::spy_buttons_for_config_key(key).is_some());
+    let has_labels = (asset.is_none_or(asset_has_button_labels) && viewport_w >= 960.) || spy_model;
     let content_w =
         (viewport_w - MODEL_HORIZONTAL_RESERVE).clamp(MODEL_MIN_CONTENT_W, MODEL_CONTENT_MAX_W);
     let label_distribution = if has_labels && content_w >= TWO_SIDED_LABEL_MIN_W {
@@ -579,8 +593,14 @@ fn model_layout(
         0.
     };
     let max_image_w = (content_w - left_gutter - right_gutter).max(MODEL_MIN_CONTENT_W / 2.);
-    let (mouse_w, mouse_h, hotspots, mut labels) =
-        scaled_model(asset, target_h, max_image_w, thumbwheel, label_distribution);
+    let (mouse_w, mouse_h, hotspots, mut labels) = scaled_model(
+        asset,
+        target_h,
+        max_image_w,
+        thumbwheel,
+        label_distribution,
+        config_key,
+    );
     if !has_labels {
         labels.clear();
     }
@@ -605,15 +625,21 @@ fn scaled_model(
     max_w: f32,
     thumbwheel: bool,
     label_distribution: LabelDistribution,
+    config_key: Option<&str>,
 ) -> (f32, f32, Vec<Hotspot>, Vec<Label>) {
     if let Some(a) = asset {
         let (w, h) = asset_dimensions_for_png(a, target_h, max_w);
-        let hotspots = asset_hotspots_for_png(a, w, h);
+        let mut hotspots = asset_hotspots_for_png(a, w, h);
+        merge_spy_hotspots(
+            &mut hotspots,
+            config_key,
+            (w / MOUSE_MODEL_SIZE.0, h / MOUSE_MODEL_SIZE.1),
+        );
         let labels = labels_from_hotspots(&hotspots, h, label_distribution);
         (w, h, hotspots, labels)
     } else {
         let scale = (target_h / MOUSE_MODEL_SIZE.1).min(max_w / MOUSE_MODEL_SIZE.0);
-        let hotspots = default_hotspots(thumbwheel)
+        let mut hotspots: Vec<Hotspot> = default_hotspots(thumbwheel)
             .into_iter()
             .map(|hs| Hotspot {
                 x: hs.x * scale,
@@ -623,13 +649,9 @@ fn scaled_model(
                 ..hs
             })
             .collect();
-        let labels = default_labels(thumbwheel, label_distribution)
-            .into_iter()
-            .map(|l| Label {
-                y: l.y * scale,
-                ..l
-            })
-            .collect();
+        merge_spy_hotspots(&mut hotspots, config_key, (scale, scale));
+        let labels =
+            labels_from_hotspots(&hotspots, MOUSE_MODEL_SIZE.1 * scale, label_distribution);
         (
             MOUSE_MODEL_SIZE.0 * scale,
             MOUSE_MODEL_SIZE.1 * scale,

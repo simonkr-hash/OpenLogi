@@ -511,7 +511,7 @@ impl CaptureManager for KeyboardManager {
             .await;
     }
 
-    fn handle_session_event(
+    async fn handle_session_event(
         &mut self,
         event: KeyboardSessionEvent,
         device_io_allowed: bool,

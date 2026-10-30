@@ -439,7 +439,7 @@ fn side_gesture_transition_keeps_the_retiring_plan_until_native_restore() {
     );
     assert!(!session.is_active());
 
-    let (_, retained) = dispatch_context_for(session.id(), Some(&session))
+    let (_, retained, _) = dispatch_context_for(session.id(), Some(&session))
         .expect("the draining session must remain an admissible input owner");
     assert!(
         retained
@@ -861,9 +861,11 @@ async fn a_pointer_only_plan_refresh_keeps_a_held_gesture() {
     );
     let mut session = live_session_from_plan(7, held.clone());
     let id = session.id().clone();
+    let route = session.target().route.clone();
     dispatcher.dispatch(
         &id,
         session.dispatch(),
+        &route,
         CapturedInput::ButtonDown(ButtonId::GestureButton),
     );
     assert!(dispatcher.holds_gesture_press(&id, ButtonId::GestureButton));
@@ -876,7 +878,8 @@ async fn a_pointer_only_plan_refresh_keeps_a_held_gesture() {
         &mut session,
         Some((&moved.target, &moved.dispatch)),
         &mut dispatcher,
-    );
+    )
+    .await;
     assert!(
         dispatcher.holds_gesture_press(&id, ButtonId::GestureButton),
         "a pointer-only refresh must not end the hold that caused it"
@@ -892,7 +895,8 @@ async fn a_pointer_only_plan_refresh_keeps_a_held_gesture() {
         &mut session,
         Some((&rebound.target, &rebound.dispatch)),
         &mut dispatcher,
-    );
+    )
+    .await;
     assert!(!dispatcher.holds_gesture_press(&id, ButtonId::GestureButton));
 
     scroll.shutdown();

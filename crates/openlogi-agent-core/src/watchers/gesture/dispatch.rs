@@ -4,18 +4,21 @@ mod wheel;
 
 use std::collections::HashMap;
 use std::num::NonZeroU8;
+use std::sync::Arc;
 use std::time::Instant;
 
 use openlogi_core::binding::{Action, Binding, ButtonId, HeldWheel, default_binding};
 use openlogi_core::config::ThumbwheelSensitivity;
 use openlogi_core::scroll::ScrollDelta;
-use openlogi_hid::CapturedInput;
 use openlogi_hid::thumbwheel::WheelResolution;
+use openlogi_hid::{CapturedInput, DeviceRoute};
+use tokio::task::JoinHandle;
 use tracing::debug;
 
 use self::wheel::{ScrollScale, WheelAccumulators, WheelOutput, WheelRotation};
 use super::GestureOutputs;
 use crate::capture_plan::DispatchPlan;
+use crate::hardware::{SpyNativeDpi, SpyShiftHold};
 use crate::runtime::hook::SharedHookMaps;
 use crate::runtime::{HidppSessionId, PressToken};
 
@@ -96,6 +99,28 @@ impl SessionWheels {
     }
 }
 
+/// In-flight software DPI writes for unbound spy buttons. Finished handles are
+/// dropped on the next track so a long-lived capture session cannot grow the
+/// vector without bound; cancel still awaits whatever is still running.
+#[derive(Default)]
+struct SpyOps(HashMap<HidppSessionId, Vec<JoinHandle<()>>>);
+
+impl SpyOps {
+    fn track(&mut self, session: &HidppSessionId, handle: JoinHandle<()>) {
+        let ops = self.0.entry(session.clone()).or_default();
+        ops.retain(|handle| !handle.is_finished());
+        ops.push(handle);
+    }
+
+    async fn cancel_session(&mut self, session: &HidppSessionId) {
+        if let Some(ops) = self.0.remove(session) {
+            for handle in ops {
+                let _ = handle.await;
+            }
+        }
+    }
+}
+
 /// Input routing plus the per-session state retained between
 /// captured events. Capture-session lifecycle remains owned by the parent.
 pub(super) struct InputDispatcher {
@@ -103,6 +128,11 @@ pub(super) struct InputDispatcher {
     outputs: GestureOutputs,
     wheels: SessionWheels,
     held_presses: HeldPresses,
+    /// DPI to restore when an unbound DPI-shift key is released.
+    spy_shift: Arc<tokio::sync::Mutex<HashMap<HidppSessionId, SpyShiftHold>>>,
+    /// In-flight software DPI writes for unbound spy buttons. Cancel awaits
+    /// these before restoring so shutdown cannot drop a ShiftDown or ShiftUp.
+    spy_ops: SpyOps,
 }
 
 impl InputDispatcher {
@@ -113,6 +143,8 @@ impl InputDispatcher {
             outputs,
             wheels: SessionWheels::default(),
             held_presses: HeldPresses::default(),
+            spy_shift: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            spy_ops: SpyOps::default(),
         }
     }
 
@@ -138,10 +170,33 @@ impl InputDispatcher {
     }
 
     /// Cancel every input lifecycle retained for one capture session.
-    pub(super) fn cancel_session(&mut self, session: &HidppSessionId) {
+    ///
+    /// Awaits in-flight software DPI writes and any saved DPI-shift restore
+    /// before returning, so teardown and a replacement session cannot race it.
+    pub(super) async fn cancel_session(&mut self, session: &HidppSessionId) {
         self.outputs.cancel_session(session);
         self.wheels.cancel_session(session);
         self.held_presses.cancel_session(session);
+        self.spy_ops.cancel_session(session).await;
+        self.outputs
+            .actions
+            .restore_spy_shift(session.clone(), Arc::clone(&self.spy_shift))
+            .await;
+    }
+
+    fn spawn_spy_native_dpi(
+        &mut self,
+        session: &HidppSessionId,
+        route: DeviceRoute,
+        kind: SpyNativeDpi,
+    ) {
+        let handle = self.outputs.actions.spawn_spy_native_dpi(
+            session.clone(),
+            route,
+            kind,
+            Arc::clone(&self.spy_shift),
+        );
+        self.spy_ops.track(session, handle);
     }
 
     /// Route one captured input from `session` to its bound action or
@@ -150,6 +205,7 @@ impl InputDispatcher {
         &mut self,
         session: &HidppSessionId,
         plan: &DispatchPlan,
+        route: &DeviceRoute,
         input: CapturedInput,
     ) {
         let key = session.device_key();
@@ -181,35 +237,10 @@ impl InputDispatcher {
                 }
             }
             CapturedInput::ButtonDown(button) => {
-                // A raw-XY gesture source owns its click/swipe map; its physical
-                // lifecycle is still tracked, but it must not also fire the
-                // single-action projection on down.
-                let is_gesture = plan.gesture_bindings.contains_key(&button)
-                    || plan.side_gesture_bindings.contains_key(&button);
-                let binding = (!is_gesture).then(|| plan.bindings.get(&button)).flatten();
-                let tracks_hold = is_gesture || binding.is_some_and(Binding::is_wheel_hold);
-                if let Some(binding) = binding {
-                    debug!(key, ?button, action = %binding.click_action().label(), "HID++ button → binding");
-                } else {
-                    debug!(key, ?button, "HID++ button with no binding — ignored");
-                }
-                let press = self.outputs.actions.try_hidpp_button_down(
-                    session,
-                    button,
-                    binding,
-                    plan.pointer_target,
-                );
-                if tracks_hold {
-                    if let Some(press) = press {
-                        self.held_presses.start(session, button, press);
-                    } else {
-                        self.held_presses.end(session, button);
-                    }
-                }
+                self.dispatch_button_down(session, plan, route, key, button);
             }
             CapturedInput::ButtonUp(button) => {
-                self.outputs.actions.try_hidpp_button_up(session, button);
-                self.held_presses.end(session, button);
+                self.dispatch_button_up(session, plan, route, button);
             }
             CapturedInput::ButtonPulse(button) => {
                 let binding = plan.bindings.get(&button);
@@ -246,6 +277,67 @@ impl InputDispatcher {
             CapturedInput::ThumbwheelDirection { .. } => {
                 unreachable!("thumb-wheel direction reports return before dispatch")
             }
+        }
+    }
+
+    fn dispatch_button_down(
+        &mut self,
+        session: &HidppSessionId,
+        plan: &DispatchPlan,
+        route: &DeviceRoute,
+        key: &str,
+        button: ButtonId,
+    ) {
+        // A raw-XY gesture source owns its click/swipe map; its physical
+        // lifecycle is still tracked, but it must not also fire the
+        // single-action projection on down.
+        let is_gesture = plan.gesture_bindings.contains_key(&button)
+            || plan.side_gesture_bindings.contains_key(&button);
+        let binding = (!is_gesture).then(|| plan.bindings.get(&button)).flatten();
+        let tracks_hold = is_gesture || binding.is_some_and(Binding::is_wheel_hold);
+        if binding.is_some_and(Binding::has_configured_action) || is_gesture {
+            if let Some(binding) = binding {
+                debug!(key, ?button, action = %binding.click_action().label(), "HID++ button → binding");
+            }
+            let press = self.outputs.actions.try_hidpp_button_down(
+                session,
+                button,
+                binding,
+                plan.pointer_target,
+            );
+            if tracks_hold {
+                if let Some(press) = press {
+                    self.held_presses.start(session, button, press);
+                } else {
+                    self.held_presses.end(session, button);
+                }
+            }
+        } else if let Some(kind) = spy_native_kind(button, true) {
+            // Host mode suppressed the firmware mapping, so an unbound DPI
+            // key would be dead without this.
+            debug!(key, ?button, "unbound spy button → software DPI");
+            self.spawn_spy_native_dpi(session, route.clone(), kind);
+        } else {
+            debug!(key, ?button, "HID++ button with no binding — ignored");
+        }
+    }
+
+    fn dispatch_button_up(
+        &mut self,
+        session: &HidppSessionId,
+        plan: &DispatchPlan,
+        route: &DeviceRoute,
+        button: ButtonId,
+    ) {
+        self.outputs.actions.try_hidpp_button_up(session, button);
+        self.held_presses.end(session, button);
+        if !plan
+            .bindings
+            .get(&button)
+            .is_some_and(Binding::has_configured_action)
+            && let Some(kind) = spy_native_kind(button, false)
+        {
+            self.spawn_spy_native_dpi(session, route.clone(), kind);
         }
     }
 
@@ -318,6 +410,17 @@ impl InputDispatcher {
                 }
             }
         }
+    }
+}
+
+/// The software DPI change an unbound spy button stands for.
+fn spy_native_kind(button: ButtonId, down: bool) -> Option<SpyNativeDpi> {
+    match (button, down) {
+        (ButtonId::DpiUp, true) => Some(SpyNativeDpi::Step { up: true }),
+        (ButtonId::DpiDown, true) => Some(SpyNativeDpi::Step { up: false }),
+        (ButtonId::DpiShift, true) => Some(SpyNativeDpi::ShiftDown),
+        (ButtonId::DpiShift, false) => Some(SpyNativeDpi::ShiftUp),
+        _ => None,
     }
 }
 

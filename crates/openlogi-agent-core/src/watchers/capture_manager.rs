@@ -33,7 +33,7 @@ pub(super) trait CaptureManager {
     async fn reconcile(&mut self, requests: ReceiverRequestState, published: &Self::Published);
 
     /// Apply one session report. Returns whether it calls for a reconcile.
-    fn handle_session_event(
+    async fn handle_session_event(
         &mut self,
         event: Self::Event,
         device_io_allowed: bool,
@@ -133,12 +133,14 @@ pub(super) async fn run<M: CaptureManager>(
                 return ManagerCompletion::Graceful;
             }
             Some(event) = events.recv() => {
-                reconcile |= manager.handle_session_event(
-                    event,
-                    device_io.allows_io(),
-                    &receiver_requests,
-                    &published,
-                );
+                reconcile |= manager
+                    .handle_session_event(
+                        event,
+                        device_io.allows_io(),
+                        &receiver_requests,
+                        &published,
+                    )
+                    .await;
             }
             result = published.changed() => match result {
                 Ok(()) => reconcile = true,

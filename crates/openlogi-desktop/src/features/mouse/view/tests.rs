@@ -457,8 +457,9 @@ fn active_thumbwheel_directions_highlight_the_paired_control() {
 
 #[test]
 fn fallback_model_only_adds_thumbwheel_when_capability_is_measured() {
-    let (_, _, without, _) = scaled_model(None, 560., 420., false, LabelDistribution::LeftOnly);
-    let (_, _, with, _) = scaled_model(None, 560., 420., true, LabelDistribution::LeftOnly);
+    let (_, _, without, _) =
+        scaled_model(None, 560., 420., false, LabelDistribution::LeftOnly, None);
+    let (_, _, with, _) = scaled_model(None, 560., 420., true, LabelDistribution::LeftOnly, None);
     assert_eq!(
         without
             .iter()
@@ -703,4 +704,33 @@ fn a_gesture_button_without_raw_wheel_offers_no_wheel_hold(cx: &mut TestAppConte
     drop(view);
     cx.update(|window, _| window.remove_window());
     cx.run_until_parked();
+}
+
+#[test]
+fn g502_model_shows_spy_hotspots_instead_of_mx_extras() {
+    let (_, _, hotspots, _) = scaled_model(
+        None,
+        560.,
+        420.,
+        false,
+        LabelDistribution::LeftOnly,
+        Some("04099"),
+    );
+    for button in ButtonId::SPY_BUTTONS {
+        assert!(
+            hotspots
+                .iter()
+                .any(|hotspot| hotspot.id == MouseControlId::Button(button)),
+            "{button:?} must be a visible G502 hotspot"
+        );
+    }
+    assert!(
+        !hotspots.iter().any(|hotspot| {
+            matches!(
+                hotspot.id,
+                MouseControlId::Button(ButtonId::GestureButton | ButtonId::DpiToggle)
+            )
+        }),
+        "the G502 must not keep MX gesture / DPI-toggle targets"
+    );
 }

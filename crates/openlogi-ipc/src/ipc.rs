@@ -154,7 +154,10 @@ pub use succession::Identity;
 ///      timer, five-second steps up to two hours.
 /// v42: `KeyboardUsage` accepts Insert (`0x49`) and Print Screen (`0x46`),
 ///      so a `KeyCombo` can carry a usage a v41 agent rejects.
-pub const PROTOCOL_VERSION: u32 = 42;
+/// v43: `ButtonId` gained the G502 X Plus spy extras (`DpiShift`, `DpiUp`,
+///      `DpiDown`, `ProfileCycle`). Capabilities still treat `0x8110` as
+///      buttons without a new field.
+pub const PROTOCOL_VERSION: u32 = 43;
 
 /// Environment variable through which the agent hands a supervised helper the
 /// run token it will serve, so the helper knows which agent it belongs to

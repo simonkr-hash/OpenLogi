@@ -150,6 +150,14 @@ pub(super) trait ArmedCapture {
     /// Forget input state that a device power-cycle invalidated.
     fn reset_input_state(&self) {}
 
+    /// Start any report stream this capture needs, once the session's
+    /// listener already owns inbound reports so the first one is not lost. An
+    /// error ends the session through the normal teardown, which hands back
+    /// every control this capture owns.
+    async fn start(&mut self) -> Result<(), CaptureError> {
+        Ok(())
+    }
+
     /// Re-issue every diversion after a wireless reconnect. Failures are
     /// logged, not propagated: the next reconnection broadcast retries.
     async fn rearm(&self);
@@ -244,42 +252,52 @@ pub(super) async fn run_capture<A: ArmedCapture>(
     // reconfigure. Re-arm on every broadcast, or the captured controls
     // silently revert to their native functions after the first nap.
     let root = RootFeature::new(Arc::clone(&chan), device_index, 0);
-    let stop = match root.get_feature(WirelessDeviceStatusFeature::ID).await {
-        Ok(info) => {
-            let wireless = info.map(|info| {
-                WirelessDeviceStatusFeature::new(Arc::clone(&chan), device_index, info.index)
-            });
-            armed.log_active(device_index, wireless.is_some());
-            monitor(
-                CaptureMonitor {
-                    armed: &mut armed,
-                    root: &root,
-                    device_index,
-                    registry,
-                    shared: &shared,
-                    activity: activity.as_deref(),
-                },
-                wireless,
-                changes,
-                shutdown,
-                device_io,
-            )
-            .await
-        }
-        Err(error) => {
-            // Only a successful lookup can establish that wake reports are
-            // unsupported. A transient failure must retire this epoch so its
-            // supervisor retries discovery before trusting capture again.
-            warn!(
-                ?error,
-                index = device_index,
-                capture = A::NAME,
-                "wake feature discovery failed — restarting capture"
-            );
-            match shutdown.try_recv() {
-                Ok(CaptureSessionStop::Handoff(route)) => CaptureStop::Handoff(route),
-                Ok(CaptureSessionStop::Shutdown) | Err(_) => {
-                    stop_for_current_publication(registry, &shared)
+    let stop = if let Err(error) = armed.start().await {
+        warn!(
+            ?error,
+            index = device_index,
+            capture = A::NAME,
+            "capture start failed — restoring controls"
+        );
+        stop_for_current_publication(registry, &shared)
+    } else {
+        match root.get_feature(WirelessDeviceStatusFeature::ID).await {
+            Ok(info) => {
+                let wireless = info.map(|info| {
+                    WirelessDeviceStatusFeature::new(Arc::clone(&chan), device_index, info.index)
+                });
+                armed.log_active(device_index, wireless.is_some());
+                monitor(
+                    CaptureMonitor {
+                        armed: &mut armed,
+                        root: &root,
+                        device_index,
+                        registry,
+                        shared: &shared,
+                        activity: activity.as_deref(),
+                    },
+                    wireless,
+                    changes,
+                    shutdown,
+                    device_io,
+                )
+                .await
+            }
+            Err(error) => {
+                // Only a successful lookup can establish that wake reports are
+                // unsupported. A transient failure must retire this epoch so its
+                // supervisor retries discovery before trusting capture again.
+                warn!(
+                    ?error,
+                    index = device_index,
+                    capture = A::NAME,
+                    "wake feature discovery failed — restarting capture"
+                );
+                match shutdown.try_recv() {
+                    Ok(CaptureSessionStop::Handoff(route)) => CaptureStop::Handoff(route),
+                    Ok(CaptureSessionStop::Shutdown) | Err(_) => {
+                        stop_for_current_publication(registry, &shared)
+                    }
                 }
             }
         }

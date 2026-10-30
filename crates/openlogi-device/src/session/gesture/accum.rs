@@ -72,6 +72,30 @@ pub(super) struct CaptureAccum {
     /// Diverted standard-button and wheel-hold CIDs held in the last event,
     /// in press order.
     buttons_down: Vec<u16>,
+    /// Last `0x8110` spy mask, for rising/falling edges.
+    spy_mask: u16,
+}
+
+impl CaptureAccum {
+    /// Turn a new `0x8110` spy mask into the button edges it carries, and
+    /// remember it for the next comparison.
+    pub(super) fn on_spy_mask(
+        &mut self,
+        mask: u16,
+        buttons: &[ButtonId],
+        bits: &[(u8, ButtonId)],
+        sink: &mpsc::UnboundedSender<CapturedInput>,
+    ) {
+        for (button, down) in super::spy::spy_edges(self.spy_mask, mask, buttons, bits) {
+            let input = if down {
+                CapturedInput::ButtonDown(button)
+            } else {
+                CapturedInput::ButtonUp(button)
+            };
+            let _ = sink.send(input);
+        }
+        self.spy_mask = mask;
+    }
 }
 
 #[cfg(test)]
