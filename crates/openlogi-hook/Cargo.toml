@@ -20,6 +20,9 @@ futures-lite = { workspace = true }
 libc = "0.2"
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# COSMIC (cosmic-comp) toplevel info for per-app profiles. GPL-3.0-only, so
+# this fork is not upstreamable as-is.
+cosmic-protocols = { version = "0.2", default-features = false, features = ["client"] }
 x11rb = "0.13"
 zbus = "5"
 
