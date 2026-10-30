@@ -23,7 +23,7 @@ dependency (see below), so it is not upstreamable as-is.
 ```sh
 sudo pacman -S --needed rustup base-devel pkgconf systemd-libs
 rustup default stable
-git clone -b g502x-plus-port https://github.com/simonkr-hash/OpenLogi
+git clone -b master https://github.com/simonkr-hash/OpenLogi
 cd OpenLogi
 sh packaging/linux/install-fork.sh
 ```

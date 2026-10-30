@@ -2,7 +2,7 @@
 # Fresh Arch / CachyOS machine to a working OpenLogi fork in one step:
 # build tools and libraries, a Rust toolchain, then the fork itself.
 #
-#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/simonkr-hash/OpenLogi/g502x-plus-port/packaging/linux/setup-arch.sh)"
+#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/simonkr-hash/OpenLogi/master/packaging/linux/setup-arch.sh)"
 #
 # Run as your normal user (it calls sudo for pacman). Extra arguments are
 # passed on to install-fork.sh (--no-build, --keep-package).
@@ -33,6 +33,6 @@ PATH="$HOME/.cargo/bin:$PATH"
 export PATH
 cargo --version
 
-BOOTSTRAP=https://raw.githubusercontent.com/simonkr-hash/OpenLogi/g502x-plus-port/packaging/linux/bootstrap-fork.sh
+BOOTSTRAP=https://raw.githubusercontent.com/simonkr-hash/OpenLogi/master/packaging/linux/bootstrap-fork.sh
 echo "==> Fetching and installing the fork"
 exec sh -c "$(curl -fsSL "$BOOTSTRAP")" bootstrap-fork "$@"
