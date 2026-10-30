@@ -16,12 +16,14 @@ use gpui_component::{
 use openlogi_core::binding::{Action, ButtonId, GestureDirection};
 
 use super::force_sensing::{ForceSensingFacts, ForceSensingSlider, PressForce};
+use super::g502::G502Silhouette;
 use super::geometry::{
     LabelDistribution, asset_dimensions_for_png, asset_has_button_labels, asset_hotspots_for_png,
     labels_from_hotspots,
 };
 use super::hotspots::{
     Hotspot, MOUSE_MODEL_SIZE, MouseControlId, default_hotspots, merge_spy_hotspots,
+    spy_overlay_for,
 };
 use super::inspector::{
     ActionPickerContext, BindingInspectorData, InvalidDrafts, ShortcutMode, binding_inspector,
@@ -464,7 +466,7 @@ impl Render for MouseModelView {
         let hotspots_outer = hotspots.clone();
         let labels_outer = labels.clone();
         let leader_canvas = leader_canvas(hotspots, labels, highlight, mouse_left, mouse_w);
-        let breathing_art = breathing_art(asset, mouse_left, mouse_w, mouse_h, glow);
+        let breathing_art = breathing_art(asset, device_key, mouse_left, mouse_w, mouse_h, glow);
         let model = ModelRect {
             left: mouse_left,
             width: mouse_w,
@@ -691,6 +693,7 @@ fn leader_canvas(
 
 fn breathing_art(
     asset: Option<&ResolvedAsset>,
+    config_key: Option<&str>,
     mouse_left: f32,
     mouse_w: f32,
     mouse_h: f32,
@@ -701,6 +704,11 @@ fn breathing_art(
             .w(px(mouse_w))
             .h(px(mouse_h))
             .into_any_element(),
+        None if config_key.and_then(spy_overlay_for).is_some() => G502Silhouette {
+            w: mouse_w,
+            h: mouse_h,
+        }
+        .into_any_element(),
         None => Silhouette {
             w: mouse_w,
             h: mouse_h,

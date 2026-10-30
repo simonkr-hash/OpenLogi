@@ -122,21 +122,13 @@ pub fn default_hotspots(thumbwheel: bool) -> Vec<Hotspot> {
     hotspots
 }
 
-/// MX-only controls that the G502 X Plus does not have. They occupy the same
-/// silhouette slots we use for G6–G9, so they must come off before merge.
-const G502_OMIT: [MouseControlId; 3] = [
-    MouseControlId::Button(ButtonId::GestureButton),
-    MouseControlId::Button(ButtonId::DpiToggle),
-    MouseControlId::Button(ButtonId::HapticPanel),
-];
-
 /// Per-model silhouette overlay for a [`SpyModel`]. Gated on the HID++ key so
 /// DPI Up/Down never appear on MX or an undocumented cousin.
 pub struct SpyOverlay {
     /// MX slots this model's extras replace.
     pub omit: &'static [MouseControlId],
-    /// Synthetic extra-button targets (G6–G9 on the G502 X Plus).
-    pub hotspots: [Hotspot; 4],
+    /// Extra-button targets of this model (see `g502`).
+    pub hotspots: Vec<Hotspot>,
 }
 
 /// Overlay for this HID++ model id, if it has a locked spy map.
@@ -144,51 +136,9 @@ pub struct SpyOverlay {
 pub fn spy_overlay_for(config_key: &str) -> Option<SpyOverlay> {
     SpyModel::for_hidpp_key(config_key)?;
     Some(SpyOverlay {
-        omit: &G502_OMIT,
-        hotspots: spy_hotspots(),
+        omit: &super::g502::OMIT,
+        hotspots: super::g502::hotspots(),
     })
-}
-
-/// Synthetic G6–G9 targets for the G502 X Plus silhouette. Coordinates reuse
-/// the MX left-thumb and DPI-cluster slots so the extras are visible; this
-/// mouse has no depot `slotId`s. Other models add their own overlay in
-/// [`spy_overlay_for`] — do not reuse these numbers.
-#[must_use]
-pub fn spy_hotspots() -> [Hotspot; 4] {
-    [
-        // Left-thumb sniper — the MX silhouette's gesture-button slot.
-        Hotspot {
-            id: ButtonId::DpiShift.into(),
-            x: 8.,
-            y: 380.,
-            w: 44.,
-            h: 80.,
-        },
-        // DPI cluster, left of the old ModeShift pad.
-        Hotspot {
-            id: ButtonId::DpiDown.into(),
-            x: 130.,
-            y: 226.,
-            w: 48.,
-            h: 44.,
-        },
-        // DPI cluster, right of the old ModeShift pad.
-        Hotspot {
-            id: ButtonId::DpiUp.into(),
-            x: 242.,
-            y: 226.,
-            w: 48.,
-            h: 44.,
-        },
-        // Profile cycle — immediately behind the DPI cluster.
-        Hotspot {
-            id: ButtonId::ProfileCycle.into(),
-            x: 175.,
-            y: 278.,
-            w: 70.,
-            h: 40.,
-        },
-    ]
 }
 
 /// Append this model's extra-button targets when `config_key` is a locked
@@ -261,7 +211,10 @@ mod tests {
 
     #[test]
     fn spy_hotspots_cover_g6_through_g9() {
-        let ids: Vec<_> = spy_hotspots().into_iter().map(|h| h.id).collect();
+        let ids: Vec<_> = super::super::g502::hotspots()
+            .into_iter()
+            .map(|h| h.id)
+            .collect();
         for button in ButtonId::SPY_BUTTONS {
             assert!(
                 ids.contains(&MouseControlId::Button(button)),
@@ -299,7 +252,9 @@ mod tests {
             4
         );
         assert!(
-            !g502.iter().any(|h| G502_OMIT.contains(&h.id)),
+            !g502
+                .iter()
+                .any(|h| super::super::g502::MX_ONLY.contains(&h.id)),
             "MX-only slots must yield to G6–G9 on the G502 silhouette"
         );
     }
