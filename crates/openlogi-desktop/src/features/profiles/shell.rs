@@ -147,8 +147,23 @@ fn profile_scope_content(shell: ProfileScopeShell, pal: Palette) -> impl IntoEle
             pal,
         ))
         .when_some(selected_profile, |row, profile| {
-            row.child(profile_options_menu(shell.id_base, profile, shell.actions))
+            let sources = copy_sources(&shell.model.profiles, &profile);
+            row.child(profile_options_menu(
+                shell.id_base,
+                profile,
+                sources,
+                shell.actions,
+            ))
         })
+}
+
+/// The saved profiles other than `selected`, whose settings it can copy.
+fn copy_sources(profiles: &[ProfileChoice], selected: &ProfileChoice) -> Vec<ProfileChoice> {
+    profiles
+        .iter()
+        .filter(|other| other.persisted && other.app != selected.app)
+        .cloned()
+        .collect()
 }
 
 fn profile_tab(
@@ -234,6 +249,7 @@ pub(super) fn application_mark(
 fn profile_options_menu(
     id_base: &'static str,
     profile: ProfileChoice,
+    sources: Vec<ProfileChoice>,
     actions: ProfileScopeActions,
 ) -> impl IntoElement {
     control_button(format!("{id_base}:profile-options"))
@@ -247,41 +263,60 @@ fn profile_options_menu(
             let all_actions = actions.clone();
             let profile = profile.clone();
             let actions = actions.clone();
-            menu.label(profile.name.clone())
-                .item(
-                    PopupMenuItem::new(tr!("profiles.reset_profile_dialog"))
-                        .disabled(!profile.persisted)
-                        .on_click(move |_, window, cx| {
-                            let profile = reset_profile.clone();
-                            let actions = reset_actions.clone();
-                            // Open after the menu restores focus to its trigger.
-                            window.defer(cx, move |window, cx| actions.reset(profile, window, cx));
-                        }),
-                )
-                .separator()
-                .item(
-                    PopupMenuItem::new(if profile.persisted {
-                        tr!("profiles.remove_profile_dialog")
-                    } else {
-                        tr!("profiles.remove_profile")
-                    })
-                    .on_click(move |_event, window, cx| {
-                        let profile = profile.clone();
-                        let actions = actions.clone();
-                        window.defer(cx, move |window, cx| actions.remove(profile, window, cx));
-                    }),
-                )
-                .separator()
-                .item(
-                    PopupMenuItem::new(tr!("profiles.remove_all_profiles_dialog")).on_click(
+            let mut menu = menu.label(profile.name.clone());
+            if actions.can_copy() && !sources.is_empty() {
+                menu = menu.separator().label(tr!("profiles.copy_settings_from"));
+                for source in &sources {
+                    let source = source.clone();
+                    let target = profile.clone();
+                    let actions = actions.clone();
+                    menu = menu.item(PopupMenuItem::new(source.name.clone()).on_click(
                         move |_, window, cx| {
-                            let profile = all_profile.clone();
-                            let actions = all_actions.clone();
+                            let source = source.clone();
+                            let target = target.clone();
+                            let actions = actions.clone();
                             window.defer(cx, move |window, cx| {
-                                actions.remove_all(profile, window, cx);
+                                actions.copy_from(source, target, window, cx);
                             });
                         },
-                    ),
-                )
+                    ));
+                }
+                menu = menu.separator();
+            }
+            menu.item(
+                PopupMenuItem::new(tr!("profiles.reset_profile_dialog"))
+                    .disabled(!profile.persisted)
+                    .on_click(move |_, window, cx| {
+                        let profile = reset_profile.clone();
+                        let actions = reset_actions.clone();
+                        // Open after the menu restores focus to its trigger.
+                        window.defer(cx, move |window, cx| actions.reset(profile, window, cx));
+                    }),
+            )
+            .separator()
+            .item(
+                PopupMenuItem::new(if profile.persisted {
+                    tr!("profiles.remove_profile_dialog")
+                } else {
+                    tr!("profiles.remove_profile")
+                })
+                .on_click(move |_event, window, cx| {
+                    let profile = profile.clone();
+                    let actions = actions.clone();
+                    window.defer(cx, move |window, cx| actions.remove(profile, window, cx));
+                }),
+            )
+            .separator()
+            .item(
+                PopupMenuItem::new(tr!("profiles.remove_all_profiles_dialog")).on_click(
+                    move |_, window, cx| {
+                        let profile = all_profile.clone();
+                        let actions = all_actions.clone();
+                        window.defer(cx, move |window, cx| {
+                            actions.remove_all(profile, window, cx);
+                        });
+                    },
+                ),
+            )
         })
 }

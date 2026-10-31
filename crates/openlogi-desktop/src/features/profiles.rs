@@ -83,6 +83,8 @@ pub(super) struct ProfileScopeModel {
 
 type SelectProfile = dyn Fn(Option<String>, &mut App);
 type ChangeProfile = dyn Fn(ProfileChoice, &mut Window, &mut App);
+/// Takes the profile to copy from, then the profile that receives the copy.
+type CopyProfile = dyn Fn(ProfileChoice, ProfileChoice, &mut Window, &mut App);
 
 /// Feature-owned behavior invoked by the profile selector shell.
 #[derive(Clone)]
@@ -91,6 +93,8 @@ pub(super) struct ProfileScopeActions {
     reset: Rc<ChangeProfile>,
     remove: Rc<ChangeProfile>,
     remove_all: Rc<ChangeProfile>,
+    /// Absent for an editor whose profiles cannot be copied.
+    copy_from: Option<Rc<CopyProfile>>,
 }
 
 impl ProfileScopeActions {
@@ -105,6 +109,31 @@ impl ProfileScopeActions {
             reset: Rc::new(reset),
             remove: Rc::new(remove),
             remove_all: Rc::new(remove_all),
+            copy_from: None,
+        }
+    }
+
+    fn with_copy_from(
+        mut self,
+        copy_from: impl Fn(ProfileChoice, ProfileChoice, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.copy_from = Some(Rc::new(copy_from));
+        self
+    }
+
+    pub(super) fn can_copy(&self) -> bool {
+        self.copy_from.is_some()
+    }
+
+    pub(super) fn copy_from(
+        &self,
+        source: ProfileChoice,
+        target: ProfileChoice,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if let Some(copy_from) = &self.copy_from {
+            copy_from(source, target, window, cx);
         }
     }
 
@@ -138,6 +167,7 @@ pub(crate) fn button_profile_scope_bar(
     let key = state.current_record()?.device_key();
     let reset_key = key.clone();
     let remove_all_key = key.clone();
+    let copy_key = key.clone();
     let editing_app = state.editing_app().map(str::to_string);
     let saved: Vec<&str> = state.app_profiles().map(|(app, _)| app).collect();
     let (profiles, coverage) = scope_profiles(state, &saved, editing_app.as_deref());
@@ -159,7 +189,10 @@ pub(crate) fn button_profile_scope_bar(
         move |profile, window, cx| {
             ProfileCommand::RemoveAll.confirm(&remove_all_key, &profile, window, cx);
         },
-    );
+    )
+    .with_copy_from(move |source, target, window, cx| {
+        confirm_copy(&copy_key, &source, &target, window, cx);
+    });
 
     Some(ProfileScopeShell::new(
         "button-profile",
@@ -432,6 +465,55 @@ impl ProfileCommand {
                 })
         });
     }
+}
+
+/// Copy `source`'s button settings onto `target`. A profile with saved settings
+/// is replaced only after the user agrees; a draft has nothing to lose.
+fn confirm_copy(
+    key: &DeviceKey,
+    source: &ProfileChoice,
+    target: &ProfileChoice,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let apply = {
+        let key = key.clone();
+        let source = source.app.clone();
+        let target = target.app.clone();
+        move |cx: &mut App| {
+            AppState::apply(cx, |state| state.copy_app_profile(&key, &source, &target));
+        }
+    };
+    if !target.persisted {
+        apply(cx);
+        return;
+    }
+    let target_name = target.name.clone();
+    let source_name = source.name.clone();
+    window.open_alert_dialog(cx, move |alert, _, _| {
+        let apply = apply.clone();
+        alert
+            .title(tr!(
+                "profiles.copy_profile_question",
+                app => target_name.clone(),
+                source => source_name.clone()
+            ))
+            .description(tr!(
+                "profiles.copy_profile_description",
+                source => source_name.clone()
+            ))
+            .button_props(
+                DialogButtonProps::default()
+                    .ok_text(tr!("profiles.copy_profile"))
+                    .ok_variant(ButtonVariant::Danger)
+                    .cancel_text(tr!("common.cancel"))
+                    .show_cancel(true),
+            )
+            .on_ok(move |_event, _window, cx| {
+                apply(cx);
+                true
+            })
+    });
 }
 
 /// Derive a readable fallback from a profile identifier when the agent has not

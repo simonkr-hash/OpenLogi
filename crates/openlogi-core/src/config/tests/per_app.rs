@@ -378,3 +378,47 @@ PLATFORM = ["com.example.editor", "com.example.editorbeta"]
     let reloaded = Config::load_from_path(&path).expect("saved config loads");
     assert_eq!(reloaded.apps, config.apps);
 }
+
+#[test]
+fn copying_a_profile_replaces_the_target_and_leaves_the_source() {
+    let mut cfg = Config::default();
+    cfg.set_per_app_binding("2b042", "wow", ButtonId::Back, Some(Action::Undo));
+    cfg.set_per_app_binding("2b042", "wow", ButtonId::Forward, Some(Action::Redo));
+    cfg.set_per_app_binding("2b042", "diablo", ButtonId::Back, Some(Action::BrowserBack));
+    cfg.set_per_app_binding(
+        "2b042",
+        "diablo",
+        ButtonId::MiddleClick,
+        Some(Action::BrowserForward),
+    );
+
+    assert!(cfg.copy_app_profile("2b042", "wow", "diablo"));
+
+    let wow = cfg.per_app_overrides("2b042", "wow").unwrap().clone();
+    assert_eq!(cfg.per_app_overrides("2b042", "diablo"), Some(&wow));
+    assert_eq!(wow.len(), 2, "the source keeps its overrides");
+}
+
+#[test]
+fn copying_creates_a_missing_target_and_refuses_nothing_to_copy() {
+    let mut cfg = Config::default();
+    cfg.set_per_app_binding("2b042", "wow", ButtonId::Back, Some(Action::Undo));
+
+    assert!(cfg.copy_app_profile("2b042", "wow", "diablo"));
+    assert_eq!(
+        cfg.per_app_overrides("2b042", "diablo")
+            .and_then(|overrides| overrides.get(&ButtonId::Back)),
+        Some(&Action::Undo)
+    );
+
+    assert!(!cfg.copy_app_profile("2b042", "wow", "wow"), "onto itself");
+    assert!(
+        !cfg.copy_app_profile("2b042", "missing", "diablo"),
+        "no source"
+    );
+    assert!(!cfg.copy_app_profile("other", "wow", "diablo"), "no device");
+    assert!(
+        cfg.per_app_overrides("2b042", "diablo").is_some(),
+        "a refused copy leaves the target alone"
+    );
+}

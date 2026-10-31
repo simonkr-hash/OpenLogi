@@ -109,6 +109,25 @@ impl Config {
         }
     }
 
+    /// Replace `device_key`'s overrides for the application key `to` with a
+    /// copy of those it has for `from`, so a new profile can start from an
+    /// existing one. Returns whether anything was copied: `false` when `from`
+    /// has no overrides or is `to` itself.
+    pub fn copy_app_profile(&mut self, device_key: &str, from: &str, to: &str) -> bool {
+        if from == to {
+            return false;
+        }
+        let Some(overrides) = self.per_app_overrides(device_key, from).cloned() else {
+            return false;
+        };
+        self.devices
+            .entry(device_key.to_string())
+            .or_default()
+            .per_app_bindings
+            .insert(to.to_string(), overrides);
+        true
+    }
+
     /// Whether `device_key` has a non-empty per-app binding overlay for the
     /// foreground app `app`. Drives the menu-bar popover's "override
     /// active" badge — when the current app has its own bindings for this

@@ -386,6 +386,19 @@ impl AppState {
         StateEvent::BindingsChanged(key.clone()).into()
     }
 
+    /// Start `to` from a copy of `from`'s button overrides, replacing whatever
+    /// `to` had. The open editor keeps showing `to`, saved from here on.
+    pub fn copy_app_profile(&mut self, key: &DeviceKey, from: &str, to: &str) -> StateEvents {
+        let copied = self
+            .config
+            .edit(|config| config.copy_app_profile(key.as_str(), from, to));
+        if copied {
+            self.persist_and_reload("per-app profile copy");
+            self.refresh_binding_projections();
+        }
+        StateEvent::BindingsChanged(key.clone()).into()
+    }
+
     fn clear_app_profile(&mut self, key: &str, app: &str) -> bool {
         if !self
             .config

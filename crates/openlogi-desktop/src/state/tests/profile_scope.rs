@@ -462,3 +462,28 @@ fn a_host_with_no_readable_foreground_app_reports_the_default_profile() {
     assert!(state.set_foreground(ForegroundApps::default()).is_empty());
     assert_eq!(state.active_profile_name(), None);
 }
+
+#[test]
+fn copying_a_profile_gives_the_open_editor_the_source_bindings() {
+    let mut config = Config::ephemeral();
+    config.set_per_app_binding(KNOWN_MOUSE_KEY, "wow", ButtonId::Back, Some(Action::Undo));
+    let resolver = AssetResolver::new();
+    let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut state = AppState::new(Sources {
+        inventories: &[direct_inventory([0xa3, 0x93, 0xca, 0xe0])],
+        ..Sources::in_memory(config, &resolver, commands)
+    });
+    let key = DeviceKey::from(KNOWN_MOUSE_KEY);
+    let _ = state.set_editing_app(Some("diablo".into()));
+    assert_ne!(state.button_bindings()[&ButtonId::Back], Action::Undo);
+
+    let events = state.copy_app_profile(&key, "wow", "diablo");
+
+    assert_eq!(events, [StateEvent::BindingsChanged(key)]);
+    assert_eq!(state.editing_app(), Some("diablo"));
+    assert_eq!(state.button_bindings()[&ButtonId::Back], Action::Undo);
+    assert_eq!(
+        state.app_profiles().collect::<Vec<_>>(),
+        [("diablo", 1), ("wow", 1)]
+    );
+}
