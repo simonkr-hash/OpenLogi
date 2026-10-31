@@ -407,7 +407,7 @@ impl RecordsShortcut for MouseModelView {
         match recording {
             Recording::Chord(combo) => {
                 self.custom_shortcut_input.update(cx, |input, cx| {
-                    input.set_value(combo.rendered_label(), window, cx);
+                    input.set_value(combo.display_label(), window, cx);
                 });
                 self.invalid_drafts.shortcut = false;
             }

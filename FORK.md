@@ -78,6 +78,11 @@ Steam games with their own id (`steam_app_2679100`) keep that class as key.
 - The mouse drawing is hand-made and approximate.
 - Custom shortcuts support letters, digits, most punctuation, F1-F24, the
   navigation block and arrows. No numpad, Insert, Print or a bare Super key.
+- The settings app reads your keyboard layout (COSMIC `xkb_config`,
+  `XKB_DEFAULT_*`, or `/etc/default/keyboard`) so recording and showing a
+  shortcut follow what your keys print: `ü ä ö ß < #` work on a German layout
+  and Z/Y are not swapped. `config.toml` stays layout-neutral: `ü` is stored as
+  its US key name `[`, so it keeps meaning the same physical key.
 - The COSMIC backend binds `zcosmic_toplevel_info_v1` at version 1 (deprecated
   but working). If COSMIC drops it, move to the version 2+ flow with
   `ext_foreign_toplevel_list`.

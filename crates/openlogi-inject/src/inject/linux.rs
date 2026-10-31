@@ -19,7 +19,7 @@ use evdev::{AttributeSet, EventType, InputEvent, KeyCode, RelativeAxisCode};
 use zbus::blocking::Connection as DbusConn;
 
 use openlogi_core::binding::{
-    Action, Effect, KeyCombo, MediaKey, MouseButton, NativeAction, Shortcut,
+    Action, Effect, KeyCombo, KeyboardUsage, MediaKey, MouseButton, NativeAction, Shortcut,
 };
 use openlogi_core::scroll::ScrollDelta;
 
@@ -543,7 +543,7 @@ const KEY_CAPABILITIES: &[KeyCode] = &[
     KeyCode::KEY_MINUS,      KeyCode::KEY_EQUAL,   KeyCode::KEY_LEFTBRACE,
     KeyCode::KEY_RIGHTBRACE, KeyCode::KEY_BACKSLASH, KeyCode::KEY_SEMICOLON,
     KeyCode::KEY_APOSTROPHE, KeyCode::KEY_GRAVE,   KeyCode::KEY_COMMA,
-    KeyCode::KEY_DOT,        KeyCode::KEY_SLASH,
+    KeyCode::KEY_DOT,        KeyCode::KEY_SLASH,    KeyCode::KEY_102ND,
     // Navigation / editing
     KeyCode::KEY_LEFT,  KeyCode::KEY_RIGHT, KeyCode::KEY_UP,       KeyCode::KEY_DOWN,
     KeyCode::KEY_HOME,  KeyCode::KEY_END,   KeyCode::KEY_PAGEUP,   KeyCode::KEY_PAGEDOWN,
@@ -782,102 +782,10 @@ fn held_keycode(key: HeldKey) -> Option<KeyCode> {
 
 /// Map a platform-neutral USB HID keyboard usage to evdev.
 fn hid_usage_to_linux(usage: u8) -> Option<KeyCode> {
-    const LETTERS: [KeyCode; 26] = [
-        KeyCode::KEY_A,
-        KeyCode::KEY_B,
-        KeyCode::KEY_C,
-        KeyCode::KEY_D,
-        KeyCode::KEY_E,
-        KeyCode::KEY_F,
-        KeyCode::KEY_G,
-        KeyCode::KEY_H,
-        KeyCode::KEY_I,
-        KeyCode::KEY_J,
-        KeyCode::KEY_K,
-        KeyCode::KEY_L,
-        KeyCode::KEY_M,
-        KeyCode::KEY_N,
-        KeyCode::KEY_O,
-        KeyCode::KEY_P,
-        KeyCode::KEY_Q,
-        KeyCode::KEY_R,
-        KeyCode::KEY_S,
-        KeyCode::KEY_T,
-        KeyCode::KEY_U,
-        KeyCode::KEY_V,
-        KeyCode::KEY_W,
-        KeyCode::KEY_X,
-        KeyCode::KEY_Y,
-        KeyCode::KEY_Z,
-    ];
-    const DIGITS: [KeyCode; 10] = [
-        KeyCode::KEY_1,
-        KeyCode::KEY_2,
-        KeyCode::KEY_3,
-        KeyCode::KEY_4,
-        KeyCode::KEY_5,
-        KeyCode::KEY_6,
-        KeyCode::KEY_7,
-        KeyCode::KEY_8,
-        KeyCode::KEY_9,
-        KeyCode::KEY_0,
-    ];
-    const FUNCTIONS: [KeyCode; 20] = [
-        KeyCode::KEY_F1,
-        KeyCode::KEY_F2,
-        KeyCode::KEY_F3,
-        KeyCode::KEY_F4,
-        KeyCode::KEY_F5,
-        KeyCode::KEY_F6,
-        KeyCode::KEY_F7,
-        KeyCode::KEY_F8,
-        KeyCode::KEY_F9,
-        KeyCode::KEY_F10,
-        KeyCode::KEY_F11,
-        KeyCode::KEY_F12,
-        KeyCode::KEY_F13,
-        KeyCode::KEY_F14,
-        KeyCode::KEY_F15,
-        KeyCode::KEY_F16,
-        KeyCode::KEY_F17,
-        KeyCode::KEY_F18,
-        KeyCode::KEY_F19,
-        KeyCode::KEY_F20,
-    ];
-    match usage {
-        0x04..=0x1d => LETTERS.get(usize::from(usage - 0x04)).copied(),
-        0x1e..=0x27 => DIGITS.get(usize::from(usage - 0x1e)).copied(),
-        0x3a..=0x45 => FUNCTIONS.get(usize::from(usage - 0x3a)).copied(),
-        0x68..=0x6f => FUNCTIONS.get(usize::from(usage - 0x68 + 12)).copied(),
-        0x28 => Some(KeyCode::KEY_ENTER),
-        0x29 => Some(KeyCode::KEY_ESC),
-        0x2a => Some(KeyCode::KEY_BACKSPACE),
-        0x2b => Some(KeyCode::KEY_TAB),
-        0x2c => Some(KeyCode::KEY_SPACE),
-        0x2d => Some(KeyCode::KEY_MINUS),
-        0x2e => Some(KeyCode::KEY_EQUAL),
-        0x2f => Some(KeyCode::KEY_LEFTBRACE),
-        0x30 => Some(KeyCode::KEY_RIGHTBRACE),
-        0x31 => Some(KeyCode::KEY_BACKSLASH),
-        0x33 => Some(KeyCode::KEY_SEMICOLON),
-        0x34 => Some(KeyCode::KEY_APOSTROPHE),
-        0x35 => Some(KeyCode::KEY_GRAVE),
-        0x36 => Some(KeyCode::KEY_COMMA),
-        0x37 => Some(KeyCode::KEY_DOT),
-        0x38 => Some(KeyCode::KEY_SLASH),
-        0x46 => Some(KeyCode::KEY_SYSRQ),
-        0x49 => Some(KeyCode::KEY_INSERT),
-        0x4a => Some(KeyCode::KEY_HOME),
-        0x4b => Some(KeyCode::KEY_PAGEUP),
-        0x4c => Some(KeyCode::KEY_DELETE),
-        0x4d => Some(KeyCode::KEY_END),
-        0x4e => Some(KeyCode::KEY_PAGEDOWN),
-        0x4f => Some(KeyCode::KEY_RIGHT),
-        0x50 => Some(KeyCode::KEY_LEFT),
-        0x51 => Some(KeyCode::KEY_DOWN),
-        0x52 => Some(KeyCode::KEY_UP),
-        _ => None,
-    }
+    KeyboardUsage::try_from(usage)
+        .ok()?
+        .evdev_code()
+        .map(KeyCode::new)
 }
 
 // ── D-Bus helpers ────────────────────────────────────────────────────────

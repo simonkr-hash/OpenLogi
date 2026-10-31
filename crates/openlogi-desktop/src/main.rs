@@ -87,6 +87,7 @@ fn main() -> Result<()> {
     // Resolve the UI locale before any menu or window is built so the first
     // frame already renders in the right language.
     i18n::apply(&initial_config.app_settings);
+    services::keyboard_layout::install();
 
     // The always-on agent owns the hook, the HID++ capture, and all device I/O.
     // The GUI is a client: it observes inventory + status and forwards device

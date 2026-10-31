@@ -6,6 +6,8 @@ use nutype::nutype;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use thiserror::Error;
 
+use super::key_layout;
+
 const MOD_COMMAND: u8 = 1 << 0;
 const MOD_SHIFT: u8 = 1 << 1;
 const MOD_CONTROL: u8 = 1 << 2;
@@ -58,7 +60,72 @@ impl KeyboardUsage {
         }
     }
 
-    fn label(self) -> String {
+    /// The Linux evdev code of this key, the one table every Linux consumer
+    /// shares: the injector sends it and the layout reader asks the keymap
+    /// what it types.
+    #[must_use]
+    pub fn evdev_code(self) -> Option<u16> {
+        const LETTERS: [u16; 26] = [
+            30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22, 47,
+            17, 45, 21, 44,
+        ];
+        let code = self.into_inner();
+        Some(match code {
+            0x04..=0x1d => LETTERS[usize::from(code - 0x04)],
+            0x1e..=0x26 => 2 + u16::from(code - 0x1e),
+            0x27 => 11,
+            0x28 => 28,
+            0x29 => 1,
+            0x2a => 14,
+            0x2b => 15,
+            0x2c => 57,
+            0x2d => 12,
+            0x2e => 13,
+            0x2f => 26,
+            0x30 => 27,
+            0x31 => 43,
+            0x33 => 39,
+            0x34 => 40,
+            0x35 => 41,
+            0x36 => 51,
+            0x37 => 52,
+            0x38 => 53,
+            0x3a..=0x43 => 59 + u16::from(code - 0x3a),
+            0x44 => 87,
+            0x45 => 88,
+            0x46 => 99,
+            0x49 => 110,
+            0x4a => 102,
+            0x4b => 104,
+            0x4c => 111,
+            0x4d => 107,
+            0x4e => 109,
+            0x4f => 106,
+            0x50 => 105,
+            0x51 => 108,
+            0x52 => 103,
+            0x64 => 86,
+            0x68..=0x6f => 183 + u16::from(code - 0x68),
+            _ => return None,
+        })
+    }
+
+    /// The label as the user's keyboard prints it: the character the installed
+    /// [`KeyLayout`] types on this key, upper-cased. Never persisted — the
+    /// stored text is [`Self::label`], which stays the same on every layout.
+    #[must_use]
+    pub fn display_label(self) -> String {
+        key_layout::installed()
+            .and_then(|layout| layout.typed_by(self))
+            .map_or_else(
+                || self.label(),
+                |typed| typed.to_uppercase().collect::<String>(),
+            )
+    }
+
+    /// The layout-neutral name of this key, the text a shortcut is stored as.
+    #[must_use]
+    pub fn label(self) -> String {
         let code = self.into_inner();
         match code {
             0x04..=0x1d => char::from(b'A' + code - 0x04).to_string(),
@@ -80,6 +147,7 @@ impl KeyboardUsage {
             0x36 => ",".to_string(),
             0x37 => ".".to_string(),
             0x38 => "/".to_string(),
+            0x64 => "IntlBackslash".to_string(),
             0x3a..=0x45 => format!("F{}", code - 0x3a + 1),
             0x46 => "PrintScreen".to_string(),
             0x49 => "Insert".to_string(),
@@ -110,7 +178,7 @@ pub struct KeyboardUsageError(pub u8);
 const fn validate_keyboard_usage(value: &u8) -> Result<(), KeyboardUsageError> {
     if matches!(
         value,
-        0x04..=0x31 | 0x33..=0x38 | 0x3a..=0x46 | 0x49..=0x52 | 0x68..=0x6f
+        0x04..=0x31 | 0x33..=0x38 | 0x3a..=0x46 | 0x49..=0x52 | 0x64 | 0x68..=0x6f
     ) {
         Ok(())
     } else {
@@ -267,6 +335,22 @@ impl KeyCombo {
     pub fn rendered_key(&self) -> String {
         self.key.label()
     }
+
+    /// The chord as the user's keyboard prints it, for display only: see
+    /// [`KeyboardUsage::display_label`].
+    #[must_use]
+    pub fn display_label(&self) -> String {
+        match self.rendered_modifiers() {
+            Some(modifiers) => format!("{modifiers}+{}", self.display_key()),
+            None => self.display_key(),
+        }
+    }
+
+    /// The ordinary key as the user's keyboard prints it.
+    #[must_use]
+    pub fn display_key(&self) -> String {
+        self.key.display_label()
+    }
 }
 
 /// Why a user-entered keyboard shortcut could not be parsed.
@@ -292,7 +376,27 @@ pub enum KeyComboParseError {
 impl FromStr for KeyCombo {
     type Err = KeyComboParseError;
 
+    /// Parse the stored, layout-neutral text: `Y` is the key a US keyboard
+    /// prints `Y` on, whatever the user's layout prints there.
     fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Self::parse_with(input, false)
+    }
+}
+
+impl KeyCombo {
+    /// Parse text a person typed or pressed, where a character names the key
+    /// their own layout types it on: `Z` is the key their keyboard prints `Z`
+    /// on. Without an installed [`KeyLayout`](super::KeyLayout) it reads as
+    /// [`FromStr`] does.
+    ///
+    /// # Errors
+    ///
+    /// The same errors [`FromStr`] reports.
+    pub fn parse_typed(input: &str) -> Result<Self, KeyComboParseError> {
+        Self::parse_with(input, true)
+    }
+
+    fn parse_with(input: &str, typed: bool) -> Result<Self, KeyComboParseError> {
         let input = input.trim();
         if input.is_empty() {
             return Err(KeyComboParseError::Empty);
@@ -312,7 +416,7 @@ impl FromStr for KeyCombo {
             if key.is_some() {
                 return Err(KeyComboParseError::MultipleKeys);
             }
-            key = Some(parse_key(token)?);
+            key = Some(parse_key(token, typed)?);
         }
         let Some(key) = key else {
             return Err(KeyComboParseError::MissingKey);
@@ -332,8 +436,21 @@ fn parse_modifier(token: &str) -> Option<u8> {
     }
 }
 
-fn parse_key(token: &str) -> Result<KeyboardUsage, KeyComboParseError> {
+/// The character `token` is, when it is exactly one.
+fn single_char(token: &str) -> Option<char> {
+    let mut chars = token.chars();
+    let character = chars.next()?;
+    chars.next().is_none().then_some(character)
+}
+
+fn parse_key(token: &str, typed: bool) -> Result<KeyboardUsage, KeyComboParseError> {
     let lowercase = token.to_ascii_lowercase();
+    if let Some(character) = single_char(token)
+        && (typed || !character.is_ascii())
+        && let Some(usage) = key_layout::installed().and_then(|layout| layout.usage_for(character))
+    {
+        return Ok(usage);
+    }
     let usage = if lowercase.len() == 1 {
         let character = lowercase.chars().next().unwrap_or_default();
         match character {
@@ -380,6 +497,7 @@ fn parse_key(token: &str) -> Result<KeyboardUsage, KeyComboParseError> {
             "left" => 0x50,
             "down" => 0x51,
             "up" => 0x52,
+            "intlbackslash" => 0x64,
             _ => return Err(KeyComboParseError::UnknownToken(token.to_string())),
         }
     };
@@ -443,6 +561,42 @@ mod tests {
         assert!(combo.has_option());
         assert_eq!(combo.key().code(), 0x50);
         assert_eq!(combo.rendered_label(), "Ctrl+Alt+Left");
+    }
+
+    #[test]
+    fn every_key_has_the_evdev_code_the_kernel_gives_it() {
+        let evdev = |name: &str| {
+            name.parse::<KeyCombo>()
+                .expect("valid shortcut")
+                .key()
+                .evdev_code()
+        };
+        for (name, code) in [
+            ("A", 30),
+            ("Z", 44),
+            ("1", 2),
+            ("0", 11),
+            ("[", 26),
+            (";", 39),
+            ("'", 40),
+            ("F1", 59),
+            ("F12", 88),
+            ("F13", 183),
+            ("Enter", 28),
+            ("Left", 105),
+            ("IntlBackslash", 86),
+        ] {
+            assert_eq!(evdev(name), Some(code), "{name}");
+        }
+    }
+
+    #[test]
+    fn the_iso_extra_key_round_trips_through_its_text() {
+        let combo = "Alt+IntlBackslash"
+            .parse::<KeyCombo>()
+            .expect("valid shortcut");
+        assert_eq!(combo.key().code(), 0x64);
+        assert_eq!(combo.rendered_label(), "Alt+IntlBackslash");
     }
 
     #[test]

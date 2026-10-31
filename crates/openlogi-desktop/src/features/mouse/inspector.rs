@@ -920,7 +920,7 @@ fn custom_shortcut_editor(
                         .label(tr!("common.add"))
                         .on_click(move |_, window, cx| {
                             let shortcut = submit_input.read(cx).value().to_string();
-                            match shortcut.parse::<openlogi_core::binding::KeyCombo>() {
+                            match openlogi_core::binding::KeyCombo::parse_typed(&shortcut) {
                                 Ok(combo) => (on_pick)(mode.action(combo), window, cx),
                                 Err(_) => view.update(cx, |view, cx| {
                                     view.invalid_drafts.shortcut = true;

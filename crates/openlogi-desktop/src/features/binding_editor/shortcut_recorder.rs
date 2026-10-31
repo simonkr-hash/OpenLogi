@@ -46,10 +46,9 @@ impl From<&Keystroke> for Recording {
             tokens.push("Shift");
         }
         tokens.push(&keystroke.key);
-        tokens
-            .join("+")
-            .parse::<KeyCombo>()
-            .map_or(Self::Unsupported, Self::Chord)
+        // A pressed key names the key its layout types it on, so ü and the
+        // German Z reach the physical key that sends them.
+        KeyCombo::parse_typed(&tokens.join("+")).map_or(Self::Unsupported, Self::Chord)
     }
 }
 

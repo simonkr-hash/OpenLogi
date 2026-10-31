@@ -730,6 +730,7 @@ fn hid_usage_to_windows(usage: u8) -> Option<u16> {
         0x36 => Some(0xbc),
         0x37 => Some(0xbe),
         0x38 => Some(0xbf),
+        0x64 => Some(0xe2), // VK_OEM_102, the ISO key beside left Shift
         0x46 => Some(0x2c),
         0x49 => Some(0x2d),
         0x4a => Some(0x24),

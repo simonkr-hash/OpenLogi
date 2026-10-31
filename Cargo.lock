@@ -5763,6 +5763,7 @@ dependencies = [
  "url",
  "walkdir",
  "winreg",
+ "xkbcommon",
 ]
 
 [[package]]
