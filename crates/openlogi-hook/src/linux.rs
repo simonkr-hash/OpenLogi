@@ -55,7 +55,7 @@ use crate::{
 };
 use foreground::{FRONTMOST, X11Source};
 pub(crate) use foreground::{
-    ForegroundApplicationObserver, watch_frontmost_application_activations,
+    ForegroundApplicationObserver, steam_game_name, watch_frontmost_application_activations,
 };
 
 /// Hi-res scroll resolution: 120 units per standard wheel tick, matching the

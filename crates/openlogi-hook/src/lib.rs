@@ -651,6 +651,22 @@ pub fn frontmost_application() -> Option<ForegroundApp> {
     Backend::frontmost_app()
 }
 
+/// The name of the Steam game whose Proton window class is `identifier`
+/// (`steam_app_<appid>`), read from the game's Steam library. `None` for any
+/// other identifier, for a game no library holds, and off Linux.
+#[must_use]
+pub fn steam_game_name(identifier: &str) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::steam_game_name(identifier)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = identifier;
+        None
+    }
+}
+
 /// Return the Safari process captured by the latest macOS foreground-app
 /// observation without querying AppKit on the caller's thread.
 ///

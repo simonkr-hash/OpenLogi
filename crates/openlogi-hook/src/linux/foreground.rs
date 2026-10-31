@@ -22,6 +22,7 @@ use crate::ForegroundApp;
 
 mod cosmic_toplevel;
 mod gnome_shell;
+mod steam;
 mod stop;
 mod wine;
 mod wlr_foreign_toplevel;
@@ -64,9 +65,19 @@ type PublishAppId = Arc<dyn Fn(Option<String>) + Send + Sync>;
 
 /// The application a backend's identifier stands for. A Wayland-native backend
 /// reports an XWayland Wine window only by its launcher's generic class, which
-/// the X11 server can refine to the window's executable.
+/// the X11 server can refine to the window's executable. A Steam game or a Wine
+/// program is shown under its own name, not the id that matches its profile.
 fn foreground_app(id: String) -> ForegroundApp {
-    ForegroundApp::unnamed(x11::xwayland_wine_app_id(&id).unwrap_or(id))
+    let id = x11::xwayland_wine_app_id(&id).unwrap_or(id);
+    let display_name = steam::game_name(&id)
+        .or_else(|| wine::program_name(&id))
+        .unwrap_or_else(|| id.clone());
+    ForegroundApp { id, display_name }
+}
+
+/// The name of the Steam game whose window class is `identifier`.
+pub(crate) fn steam_game_name(identifier: &str) -> Option<String> {
+    steam::game_name(identifier)
 }
 
 /// Delay between reconnect attempts after an already-selected native backend

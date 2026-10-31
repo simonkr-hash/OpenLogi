@@ -24,6 +24,14 @@ pub(super) fn executable_of(pid: u32) -> Option<String> {
     executable_from_cmdline(&cmdline)
 }
 
+/// What a person calls the program an identifier [`executable_of`] produced:
+/// its file name without `.exe`, in the lower case the identifier is in.
+pub(super) fn program_name(identifier: &str) -> Option<String> {
+    executable_selector(identifier)?;
+    let (_, file) = identifier.rsplit_once(['\\', '/'])?;
+    Some(file.strip_suffix(".exe").unwrap_or(file).to_string())
+}
+
 fn executable_from_cmdline(cmdline: &[u8]) -> Option<String> {
     let program = std::str::from_utf8(cmdline.split(|byte| *byte == 0).next()?).ok()?;
     executable_selector(program)?;
@@ -49,6 +57,16 @@ mod tests {
         assert_eq!(executable_from_cmdline(b"/usr/bin/firefox\0"), None);
         assert_eq!(executable_from_cmdline(b"wine64-preloader\0"), None);
         assert_eq!(executable_from_cmdline(b""), None);
+    }
+
+    #[test]
+    fn a_program_is_named_by_its_file_without_the_extension() {
+        assert_eq!(
+            program_name("c:\\blizzard\\world of warcraft\\_retail_\\wow.exe").as_deref(),
+            Some("wow")
+        );
+        assert_eq!(program_name("firefox"), None);
+        assert_eq!(program_name("org.mozilla.firefox"), None);
     }
 
     #[test]

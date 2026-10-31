@@ -520,6 +520,9 @@ fn confirm_copy(
 /// reported that application in this session. The identifier remains the
 /// matching key; only its last human-shaped component is presented.
 fn friendly_app_name(identifier: &str) -> String {
+    if let Some(game) = openlogi_hook::steam_game_name(identifier) {
+        return game;
+    }
     let path = identifier.strip_prefix("exe:").unwrap_or(identifier);
     // The Windows identifier is the full executable path with no `exe:`
     // prefix (see `openlogi-hook`'s `ForegroundApp::id`), so a path
