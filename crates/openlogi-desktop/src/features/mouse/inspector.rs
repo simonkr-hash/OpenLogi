@@ -885,16 +885,18 @@ fn custom_shortcut_editor(
         .gap_1()
         .child(editor_section(tr!("action_ring.custom_shortcut"), pal))
         .child(h_flex().gap_2().child(tap_button).child(hold_button))
+        // The field gets its own full-width row: a translated Record/Add label
+        // beside it would squeeze it to a few characters.
+        .child(
+            div()
+                .w_full()
+                .debug_selector(move || format!("{id_prefix}-custom-shortcut-input"))
+                .child(control_input(input).cleanable(true)),
+        )
         .child(
             h_flex()
                 .gap_2()
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .debug_selector(move || format!("{id_prefix}-custom-shortcut-input"))
-                        .child(control_input(input).cleanable(true)),
-                )
+                .justify_between()
                 .child(
                     div().track_focus(picker.shortcut_record_focus).child(
                         Button::new(format!("{id_prefix}-custom-shortcut-record"))
