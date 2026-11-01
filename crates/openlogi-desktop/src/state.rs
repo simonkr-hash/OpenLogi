@@ -13,10 +13,11 @@
 //! `config.toml` (and tells the agent or the device when they care), `set_*`
 //! changes this process's memory and nothing else.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use gpui::{App, Context, Entity, Global};
-use openlogi_core::app::{AppAliases, ForegroundApp, profile_applies_to};
+use openlogi_core::app::{AppAliases, ForegroundApp, executable_selector, profile_applies_to};
 use openlogi_core::config::Config;
 use openlogi_core::device::{DeviceInventory, StandaloneDevice};
 use openlogi_core::hid::{Dpi, SmartShiftStatus};
@@ -522,11 +523,19 @@ impl AppState {
     /// Applications the agent recently saw in front, newest first, as
     /// `(identifier, display name)`. The only identifiers a picker may offer —
     /// see [`openlogi_ipc::ForegroundApps`].
-    pub fn recent_apps(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.foreground()
-            .recent
-            .iter()
-            .map(|app| (app.id.as_str(), app.display_name.as_str()))
+    ///
+    /// On Linux a Wine or Proton window is identified by the path of its
+    /// executable, which moves with the install folder, so it is offered as
+    /// its `exe:<filename>` selector instead.
+    pub fn recent_apps(&self) -> impl Iterator<Item = (Cow<'_, str>, &str)> {
+        self.foreground().recent.iter().map(|app| {
+            let id = if cfg!(target_os = "linux") {
+                executable_selector(&app.id).map_or(Cow::Borrowed(app.id.as_str()), Cow::Owned)
+            } else {
+                Cow::Borrowed(app.id.as_str())
+            };
+            (id, app.display_name.as_str())
+        })
     }
 
     /// The name the agent last reported for an application the profile keyed

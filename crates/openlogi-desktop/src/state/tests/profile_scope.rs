@@ -487,3 +487,18 @@ fn copying_a_profile_gives_the_open_editor_the_source_bindings() {
         [("diablo", 1), ("wow", 1)]
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_wine_window_is_offered_by_its_executable_not_its_install_folder() {
+    let mut state = state_with_a_known_mouse();
+    let wow = app("c:\\blizzard\\wow-neu\\_retail_\\wow.exe", "wow");
+    let firefox = app("org.mozilla.firefox", "Firefox");
+    let _ = state.set_foreground(ForegroundApps {
+        current: Some(wow.clone()),
+        recent: vec![wow, firefox],
+    });
+
+    let offered: Vec<String> = state.recent_apps().map(|(id, _)| id.into_owned()).collect();
+    assert_eq!(offered, ["exe:wow.exe", "org.mozilla.firefox"]);
+}
