@@ -232,7 +232,7 @@ impl MouseModelView {
             custom_application_input,
             custom_command_input,
             invalid_drafts: InvalidDrafts::default(),
-            shortcut_mode: ShortcutMode::Tap,
+            shortcut_mode: ShortcutMode::Hold,
             shortcut_recorder: None,
             shortcut_record_focus: cx.focus_handle(),
             force_sensing: None,
@@ -255,7 +255,7 @@ impl MouseModelView {
         self.custom_command_input
             .update(cx, |input, cx| input.set_value("", window, cx));
         self.invalid_drafts = InvalidDrafts::default();
-        self.shortcut_mode = ShortcutMode::Tap;
+        self.shortcut_mode = ShortcutMode::Hold;
         self.shortcut_recorder = None;
     }
 

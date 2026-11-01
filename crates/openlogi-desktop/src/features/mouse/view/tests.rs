@@ -136,7 +136,7 @@ fn action_picker_renders_after_opening_through_the_inspector(cx: &mut TestAppCon
     );
     click_picker_control(cx, "inspector-action-custom-shortcut-add");
     view.read_with(cx, |view, _| assert!(!view.action_picker_open));
-    assert_forward_binding(cx, &Action::CustomShortcut("Cmd+K".parse().unwrap()));
+    assert_forward_binding(cx, &Action::HoldShortcut("Cmd+K".parse().unwrap()));
 
     click_picker_control(cx, "inspector-current-action");
     view.read_with(cx, |view, cx| {
@@ -162,19 +162,19 @@ fn action_picker_renders_after_opening_through_the_inspector(cx: &mut TestAppCon
     });
 
     click_picker_control(cx, "inspector-current-action");
-    click_picker_control(cx, "inspector-action-shortcut-hold");
+    click_picker_control(cx, "inspector-action-shortcut-tap");
     view.read_with(cx, |view, _| {
-        assert_eq!(view.shortcut_mode, ShortcutMode::Hold);
+        assert_eq!(view.shortcut_mode, ShortcutMode::Tap);
     });
     click_picker_control(cx, "inspector-action-custom-shortcut-input");
     cx.simulate_input("Cmd+K");
     click_picker_control(cx, "inspector-action-custom-shortcut-add");
     view.read_with(cx, |view, _| assert!(!view.action_picker_open));
-    assert_forward_binding(cx, &Action::HoldShortcut("Cmd+K".parse().unwrap()));
+    assert_forward_binding(cx, &Action::CustomShortcut("Cmd+K".parse().unwrap()));
 
     click_picker_control(cx, "inspector-current-action");
     view.read_with(cx, |view, _| {
-        assert_eq!(view.shortcut_mode, ShortcutMode::Tap);
+        assert_eq!(view.shortcut_mode, ShortcutMode::Hold);
     });
     cx.update(|window, cx| {
         view.read(cx)
@@ -270,7 +270,7 @@ fn record_fills_the_custom_shortcut_from_the_next_key_press(cx: &mut TestAppCont
     view.read_with(cx, |view, _| assert!(!view.action_picker_open));
     assert_forward_binding(
         cx,
-        &Action::CustomShortcut("Ctrl+Shift+PageUp".parse().unwrap()),
+        &Action::HoldShortcut("Ctrl+Shift+PageUp".parse().unwrap()),
     );
 
     drop(view);
@@ -425,7 +425,7 @@ fn clearing_custom_action_drafts_resets_text_and_invalid_state(cx: &mut TestAppC
                 application: true,
                 command: true,
             };
-            view.shortcut_mode = ShortcutMode::Hold;
+            view.shortcut_mode = ShortcutMode::Tap;
 
             view.clear_custom_action_drafts(window, cx);
         });
@@ -436,7 +436,7 @@ fn clearing_custom_action_drafts_resets_text_and_invalid_state(cx: &mut TestAppC
         assert_eq!(view.custom_application_input.read(cx).value(), "");
         assert_eq!(view.custom_command_input.read(cx).value(), "");
         assert_eq!(view.invalid_drafts, InvalidDrafts::default());
-        assert_eq!(view.shortcut_mode, ShortcutMode::Tap);
+        assert_eq!(view.shortcut_mode, ShortcutMode::Hold);
     });
     drop(view);
     cx.update(|window, _| window.remove_window());
