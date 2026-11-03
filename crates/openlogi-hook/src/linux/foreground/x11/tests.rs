@@ -171,3 +171,49 @@ fn x11_observer_republishes_a_class_rewritten_on_the_focused_window() {
     drop(worker.join().unwrap());
     assert_eq!(rx.try_recv(), Err(mpsc::TryRecvError::Disconnected));
 }
+
+#[test]
+fn a_title_picks_the_wine_window_it_belongs_to() {
+    let windows = [
+        (
+            "c:\\windows\\system32\\explorer.exe".to_string(),
+            String::new(),
+        ),
+        (
+            "c:\\program files (x86)\\battle.net\\battle.net.exe".to_string(),
+            "Battle.net".to_string(),
+        ),
+        (
+            "z:\\games\\wow.exe".to_string(),
+            "World of Warcraft".to_string(),
+        ),
+    ];
+
+    assert_eq!(
+        id_for_title(&windows, "World of Warcraft").as_deref(),
+        Some("z:\\games\\wow.exe")
+    );
+    assert_eq!(
+        id_for_title(&windows, "Battle.net").as_deref(),
+        Some("c:\\program files (x86)\\battle.net\\battle.net.exe")
+    );
+    assert_eq!(id_for_title(&windows, "Unknown"), None);
+}
+
+#[test]
+fn one_title_on_several_executables_is_ambiguous() {
+    let windows = [
+        ("z:\\a.exe".to_string(), "Same".to_string()),
+        ("z:\\b.exe".to_string(), "Same".to_string()),
+    ];
+    assert_eq!(id_for_title(&windows, "Same"), None);
+
+    let twin_windows = [
+        ("z:\\a.exe".to_string(), "Same".to_string()),
+        ("z:\\a.exe".to_string(), "Same".to_string()),
+    ];
+    assert_eq!(
+        id_for_title(&twin_windows, "Same").as_deref(),
+        Some("z:\\a.exe")
+    );
+}

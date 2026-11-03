@@ -30,7 +30,7 @@ use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, event_created_child};
 
 use super::{
-    FrontmostSource, PollResult, PublishAppId, RECONNECT_DELAY, StopToken, poll_source_or_stop,
+    FrontmostSource, PollResult, PublishAppId, RECONNECT_DELAY, StopToken, poll_source_or_stop, x11,
 };
 
 /// Protocol version this backend binds. Version 1 delivers `toplevel`,
@@ -53,8 +53,10 @@ const POLL_CAP_MS: u64 = 25;
 #[derive(Default)]
 struct Toplevel {
     app_id: Option<String>,
+    title: Option<String>,
     activated: bool,
     pending_app_id: Option<String>,
+    pending_title: Option<String>,
     pending_activated: bool,
 }
 
@@ -66,6 +68,9 @@ impl Toplevel {
         // later batches, and these fields are the latest known snapshot.
         if self.pending_app_id.is_some() {
             self.app_id = self.pending_app_id.clone();
+        }
+        if self.pending_title.is_some() {
+            self.title.clone_from(&self.pending_title);
         }
         self.activated = self.pending_activated;
     }
@@ -86,10 +91,18 @@ struct State {
 
 impl State {
     fn frontmost_app_id(&self) -> Option<String> {
-        self.toplevels
+        let toplevel = self
+            .toplevels
             .values()
-            .find(|toplevel| toplevel.activated)
-            .and_then(|toplevel| toplevel.app_id.clone())
+            .find(|toplevel| toplevel.activated)?;
+        let app_id = toplevel.app_id.clone()?;
+        // An XWayland Wine window carries only its launcher's shared class; the
+        // focused toplevel's title picks its window out of the X11 client list.
+        let by_title = toplevel
+            .title
+            .as_deref()
+            .and_then(|title| x11::xwayland_wine_app_id_for_title(&app_id, title));
+        Some(by_title.unwrap_or(app_id))
     }
 }
 
@@ -168,6 +181,11 @@ impl Dispatch<ZcosmicToplevelHandleV1, ()> for State {
                     toplevel.pending_app_id = Some(app_id);
                 }
             }
+            Event::Title { title } => {
+                if let Some(toplevel) = state.toplevels.get_mut(&id) {
+                    toplevel.pending_title = Some(title);
+                }
+            }
             Event::State { state: states } => {
                 let activated = is_activated(&states);
                 if let Some(toplevel) = state.toplevels.get_mut(&id) {
@@ -183,7 +201,7 @@ impl Dispatch<ZcosmicToplevelHandleV1, ()> for State {
                 state.toplevels.remove(&id);
                 handle.destroy();
             }
-            // Title, output enter/leave, and parent are not needed for frontmost.
+            // Output enter/leave and parent are not needed for frontmost.
             _ => {}
         }
     }
@@ -515,6 +533,20 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::{Toplevel, millis_until};
+
+    #[test]
+    fn done_keeps_the_title_when_a_later_batch_omits_it() {
+        let mut toplevel = Toplevel {
+            pending_title: Some("World of Warcraft".into()),
+            ..Toplevel::default()
+        };
+
+        toplevel.commit_latest();
+        assert_eq!(toplevel.title.as_deref(), Some("World of Warcraft"));
+
+        toplevel.commit_latest();
+        assert_eq!(toplevel.title.as_deref(), Some("World of Warcraft"));
+    }
 
     #[test]
     fn done_reuses_latest_values_for_omitted_properties() {
