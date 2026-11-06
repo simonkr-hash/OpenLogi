@@ -13,8 +13,16 @@ use openlogi_core::app::executable_selector;
 /// Classes that name a launcher's shared prefix rather than one application.
 const GENERIC_CLASSES: [&str; 1] = ["steam_app_default"];
 
+/// Class prefixes of launchers that derive the class from a per-prefix id, so
+/// every program started in that prefix (the Battle.net client and the game it
+/// launches alike) shares one class. Faugus uses `steam_app_faugus<hash>`.
+const GENERIC_CLASS_PREFIXES: [&str; 1] = ["steam_app_faugus"];
+
 pub(super) fn is_generic_class(class: &str) -> bool {
     GENERIC_CLASSES.contains(&class)
+        || GENERIC_CLASS_PREFIXES
+            .iter()
+            .any(|prefix| class.starts_with(prefix))
 }
 
 /// The lower-cased Windows executable path the process `pid` was started
@@ -72,6 +80,7 @@ mod tests {
     #[test]
     fn only_the_shared_prefix_class_is_generic() {
         assert!(is_generic_class("steam_app_default"));
+        assert!(is_generic_class("steam_app_faugus5dd8f7d6"));
         assert!(!is_generic_class("steam_app_2679100"));
         assert!(!is_generic_class("wow.exe"));
     }
